@@ -1,6 +1,4 @@
-# psilinter-generated directories
-config/
-input/
+# VAE output directory
 output/
 
 # Byte-compiled / optimized / DLL files
