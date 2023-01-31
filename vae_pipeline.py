@@ -103,8 +103,8 @@ def run_cellcutter(save_dir, image_path, mask_path, window_size, cells_per_chunk
         run(
             ["cut_cells", "-z", "--window-size", window_size, "--cells-per-chunk", cells_per_chunk,
             "--cache-size", "57711", image_path, mask_path,
-            train_val_test_path + f"/{name}.csv",
-            save_dir + f"/{name}_thumbnails_{window_size}.zarr",
+            os.path.join(train_val_test_path, f"{name}.csv"),
+            os.path.join(save_dir, f"{name}_thumbnails_{window_size}.zarr"),
             "--channels", "10", "12", "15", "16", "18", "19", "20", "22", "23", "24", "26", "27", "28", "30", "31", "32", "34", "35", "36", "38", "40"
             ]
             )
@@ -112,8 +112,8 @@ def run_cellcutter(save_dir, image_path, mask_path, window_size, cells_per_chunk
         run(
             ["cut_cells", "-z", "--window-size", window_size, "--cells-per-chunk", cells_per_chunk,
             "--cache-size", "57711", image_path, mask_path,
-            train_val_test_path + f"/{name}.csv",
-            save_dir + f"/{name}_thumbnails_{window_size}_seg.zarr",
+            os.path.join(train_val_test_path, f"{name}.csv"),
+            os.path.join(save_dir, f"{name}_thumbnails_{window_size}_seg.zarr"),
             "--channels", "1"
             ]
             )
@@ -358,7 +358,7 @@ def transposeZarr(z):
 
 ###############################################################################
 
-def train_vae(save_dir, cell_cutter_path, window_size, latent_dim, batch_size):
+def train_vae(save_dir, cell_cutter_path, window_size, latent_dim, batch_size, feature_preprocessing_path):
     # Inner functions for VAE training
     class ShuffleData(keras.callbacks.Callback):
 
@@ -558,7 +558,7 @@ def train_vae(save_dir, cell_cutter_path, window_size, latent_dim, batch_size):
         shape_before_flattening = K.int_shape(x)
 
         x = layers.Flatten()(x)
-        import pdb; pdb.set_trace() # 850 was hardcoded here instead of latent_dim
+        # 850 was hardcoded here instead of latent_dim
         x = layers.Dense(latent_dim, activation='relu')(x)  #set at 850, was 32
 
         # two outputs, latent mean and (log)variance
@@ -718,7 +718,7 @@ def train_vae(save_dir, cell_cutter_path, window_size, latent_dim, batch_size):
 ###############################################################################
 
     # read percentile cutoffs selected in feature_preprocessing_selections() function
-    with open(os.path.join(save_dir, 'cutoffs.pkl'), 'rb') as handle:
+    with open(os.path.join(feature_preprocessing_path, 'cutoffs.pkl'), 'rb') as handle:
         cutoffs = pickle.load(handle)
 
 ###############################################################################
@@ -777,7 +777,7 @@ def main(args):
     vae_path = args.vae_path
     latent_dim = args.latent_dim
     batch_size = args.batch_size
-    train_vae(vae_path, cell_cutter_path, window_size, latent_dim, batch_size)
+    train_vae(vae_path, cell_cutter_path, window_size, latent_dim, batch_size, feature_preprocessing_path)
 
 if __name__ == "__main__":
 
