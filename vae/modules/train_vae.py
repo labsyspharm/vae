@@ -1,33 +1,33 @@
+import logging
+
 import os
+import random
+import datetime
+import pickle
 
 import pandas as pd
-
-import zarr
+import numpy as np
 
 from lazy_ops import DatasetView
-
-import random
-
-import datetime
+import zarr
 
 from tensorflow.python.framework.ops import disable_eager_execution
 from keras.models import Model
 from tensorflow.keras.optimizers import RMSprop
 from keras.callbacks import ModelCheckpoint, TensorBoard
 from tensorflow.keras import backend as K
-import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 from keras.models import save_model
 
-import pickle
+from ..utils import log_banner, log_multiline
 
-# a virtualenv with tensorflow 2.6.3 is needed to run this script.
+logger = logging.getLogger(__name__)
+# log_multiline(logger.info, pd.DataFrame().to_string(index=False))
 
-# clear backend, set random state seed
-K.clear_session()
-np.random.seed(237)
+# currently, a virtualenv with tensorflow 2.6.3 is needed to run this script.
+
 
 # to run this script interactively:
 # srun --pty -t 12:00:00 --mem=200G -p gpu --gres=gpu:4 bash
@@ -38,10 +38,14 @@ np.random.seed(237)
 # to run this script with sbatch:
 # sh ~/scripts/vae/submit.sh
 
-disable_eager_execution()
+# disable_eager_execution()
 # needed for keras.Model not to throw
 # "You are passing KerasTensor(type_spec=TensorSpec(shape=()..." error
 # this fix is compatible with tensorflow 2.6.3
+
+# clear backend, set random state seed
+# K.clear_session()
+# np.random.seed(237)
 
 
 def chunks(lst, thumbs_per_batch):
@@ -74,8 +78,7 @@ class ShuffleData(keras.callbacks.Callback):
 
             # convert X to Zarr format if not already
             z = zarr.zeros(
-                shape=(X.shape[0], X.shape[1],
-                       X.shape[2], X.shape[3]),
+                shape=(X.shape[0], X.shape[1], X.shape[2], X.shape[3]),
                 chunks=(X_train.chunks[0], X_train.chunks[1],
                         X_train.chunks[2], X_train.chunks[3])
                         )
@@ -89,7 +92,7 @@ class ShuffleData(keras.callbacks.Callback):
         for e, batch in enumerate(
           chunks(lst=list(range(X.shape[1])),
                  thumbs_per_batch=8000)
-          ):
+        ):
 
             print(
                 f'Shuffling batch {e+1} of thumbnails '
@@ -122,11 +125,13 @@ class ShuffleData(keras.callbacks.Callback):
 
             print(i)
 
-            z = zarr.open(os.path.join(shuffled_batch_dir, i), mode='r')
+            z = zarr.open(
+                os.path.join(shuffled_batch_dir, i), mode='r'
+                )
 
             if e == 0:
 
-                # initialize shuffle_final zarr to store shuffled batches
+                # initialize zarr to store shuffled batches
                 shuffle_final = zarr.open(
                     concatenated_batch_dir,
                     mode='w',
@@ -135,7 +140,7 @@ class ShuffleData(keras.callbacks.Callback):
                         z.shape[2], z.shape[3]
                         ),
                     chunks=(
-                        z.chunks[0], z.chunks[1],  # chunk used in cellcutter
+                        z.chunks[0], z.chunks[1],  # cellcutter chunks
                         z.chunks[2], z.chunks[3]
                         ),
                     compressor=z.compressor,
@@ -162,10 +167,10 @@ def batch_generator(X, batch_size, steps):
 
         if step_counter <= steps:
 
-            # first isolate a batch of zarr thumbnails (unit16) as numpy array
+            # isolate batch of zarr thumbnails (unit16) as numpy array
             batch = X[:, idx_start:idx_stop, :, :]
 
-            # then convert the batch back to Zarr format, but save as float32
+            # convert batch back to Zarr format, but save as float32
             z = zarr.zeros(
                 shape=(batch.shape[0], batch.shape[1],
                        batch.shape[2], batch.shape[3]),
@@ -177,7 +182,7 @@ def batch_generator(X, batch_size, steps):
 
             z[:] = batch
 
-            # rearrange Zarr dimensions to fit shape of expected VAE input
+            # rearrange Zarr dimensions to fit shape of VAE input
             # (i.e. cells, x, y, channels)
             batch = transposeZarr(z=z)
 
@@ -204,14 +209,14 @@ def batch_generator(X, batch_size, steps):
                 # log-transform
                 batch[i] = np.log10(batch[i], where=(batch[i] != 0))
 
-                # normalize 0.17th and 99.99th percentiles 0-1, per channel
+                # normalize 0.17 and 99.99 percentiles 0-1, per channel
                 for e, (lower_cutoff_log, upper_cutoff_log) in enumerate(
                   cutoffs.values()):
 
                     batch[i, :, :, e] = (
                         (((1-0)*(batch[i, :, :, e].ravel()-lower_cutoff_log)) /
-                         (upper_cutoff_log-lower_cutoff_log)
-                         ) + 0).reshape(batch[i, :, :, e].shape)
+                        (upper_cutoff_log-lower_cutoff_log)
+                        ) + 0).reshape(batch[i, :, :, e].shape)
 
                     # clip lower and upper outliers to 0 and 1, respectively
                     batch[i, :, :, e] = np.clip(
@@ -231,36 +236,40 @@ def batch_generator(X, batch_size, steps):
             step_counter = 1
 
 
-def TrainVAE(img_shape, training_epochs, learning_rate):
+def train(img_shape, training_epochs, learning_rate):
 
     # ENCODER NETWORK: Input -> Conv2D*4 -> Flatten -> Dense
     input_img = keras.Input(shape=img_shape)
 
     opt = RMSprop(learning_rate=learning_rate)
 
-    x = layers.Conv2D(filters=32, kernel_size=3,
-                      padding='same',
-                      activation='relu')(input_img)
-    x = layers.Conv2D(filters=64, kernel_size=3,
-                      padding='same',
-                      activation='relu',
-                      strides=(2, 2))(x)
-    x = layers.Conv2D(filters=64, kernel_size=3,
-                      padding='same',
-                      activation='relu')(x)
+    x = layers.Conv2D(
+        filters=32, kernel_size=3,
+        padding='same', activation='relu'
+        )(input_img)
+    x = layers.Conv2D(
+        filters=64, kernel_size=3, padding='same',
+        activation='relu', strides=(2, 2)
+        )(x)
+    x = layers.Conv2D(
+        filters=64, kernel_size=3,
+        padding='same', activation='relu'
+        )(x)
     # MAX POOL?
     # x = layers.MaxPooling2D(pool_size=(2, 2),
     #                         strides=2,
     #                         padding='valid')(x)
-    x = layers.Conv2D(filters=64, kernel_size=3,
-                      padding='same',
-                      activation='relu')(x)
+    x = layers.Conv2D(
+        filters=64, kernel_size=3,
+        padding='same', activation='relu'
+        )(x)
 
     # need to know the shape of the network here for the decoder
     shape_before_flattening = K.int_shape(x)
 
     x = layers.Flatten()(x)
-    x = layers.Dense(850, activation='relu')(x)  # was 32
+    # 850 was hardcoded here instead of latent_dim
+    x = layers.Dense(latent_dim, activation='relu')(x)  # 850, was 32
 
     # two outputs, latent mean and (log)variance
     z_mu = layers.Dense(latent_dim, name='z_mu')(x)
@@ -269,8 +278,10 @@ def TrainVAE(img_shape, training_epochs, learning_rate):
     # SAMPLING FUNCTION
     def sampling(args):
         z_mu, z_log_sigma = args
-        epsilon = K.random_normal(shape=(K.shape(z_mu)[0], latent_dim),
-                                  mean=0.0, stddev=1.0)
+        epsilon = K.random_normal(
+            shape=(K.shape(z_mu)[0], latent_dim),
+            mean=0.0, stddev=1.0
+            )
         return z_mu + K.exp(z_log_sigma) * epsilon
 
     # sample vector from the latent distribution
@@ -281,20 +292,23 @@ def TrainVAE(img_shape, training_epochs, learning_rate):
     decoder_input = layers.Input(K.int_shape(z)[1:])
 
     # expand to N total pixels
-    x = layers.Dense(np.prod(shape_before_flattening[1:]),
-                     activation='relu')(decoder_input)
+    x = layers.Dense(
+        np.prod(shape_before_flattening[1:]),
+        activation='relu'
+        )(decoder_input)
 
     # reshape
     x = layers.Reshape(shape_before_flattening[1:])(x)
 
     # use Conv2DTranspose to reverse the conv layers from the encoder
-    x = layers.Conv2DTranspose(filters=32, kernel_size=3,
-                               padding='same',
-                               activation='relu',
-                               strides=(2, 2))(x)
-    x = layers.Conv2D(filters=X_train1.shape[0], kernel_size=3,
-                      padding='same',
-                      activation='sigmoid')(x)
+    x = layers.Conv2DTranspose(
+        filters=32, kernel_size=3, padding='same',
+        activation='relu', strides=(2, 2)
+        )(x)
+    x = layers.Conv2D(
+        filters=X_train1.shape[0], kernel_size=3,
+        padding='same', activation='sigmoid'
+        )(x)
 
     # decoder model statement
     decoder = Model(decoder_input, x)
@@ -314,7 +328,9 @@ def TrainVAE(img_shape, training_epochs, learning_rate):
 
             # KL divergence (vary this coefficient)  -0.5 -5e-4
             kl_loss = -5e-4 * K.mean(
-                1 + z_log_sigma - K.square(z_mu) - K.exp(z_log_sigma), axis=-1)
+                1 + z_log_sigma - K.square(z_mu) - K.exp(z_log_sigma),
+                axis=-1
+                )
             return K.mean(xent_loss + kl_loss)
 
         # adds the custom loss to the class
@@ -343,14 +359,22 @@ def TrainVAE(img_shape, training_epochs, learning_rate):
         )
 
     log_dir = os.path.join(
-        tensorboard_log_dir, datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        tensorboard_log_dir,
+        datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
         )
     tensorboard = TensorBoard(log_dir=log_dir, histogram_freq=0)
 
+    print(
+        'To monitor model training: Open new terminal window, ' +
+        'step into VAE virtual environment, ' +
+        'run tensorboard --logdir <path_to_tensorboard_fit'
+        )
+    print()
+
     if os.path.exists(checkpoint_path):
         print(f'Loading existing weights at '
-              f'{tf.train.latest_checkpoint(checkpoint_path)}.'
-              )
+            f'{tf.train.latest_checkpoint(checkpoint_path)}.'
+            )
         vae.load_weights(
             tf.train.latest_checkpoint(checkpoint_path)
             ).expect_partial()
@@ -379,79 +403,96 @@ def TrainVAE(img_shape, training_epochs, learning_rate):
     return z_mu
 
 
-###############################################################################
+def TRAIN_VAE(config):
 
-# specify latent dimension and thumbnail batch size for training
-latent_dim = 850
-batch_size = 32
+    cellcutter_output_path = os.path.join(
+        config.output_path, f'2_cellcutter_output_win{config.window_size}'
+        )
 
-###############################################################################
+    feature_preprocessing_path = os.path.join(
+        config.output_path, '4_feature_preprocessing_selections'
+        )
 
-# save directory
-save_dir = '/Users/greg/projects/vae/output/5_train_vae'
-if not os.path.exists(save_dir):
-    os.mkdir(save_dir)
+    save_dir = os.path.join(config.output_path, '5_train_vae')
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
 
-shuffled_batch_dir = os.path.join(save_dir, 'shuffled_thumbnail_batches')
+        # clear backend, set random state seed
+        K.clear_session()
+        np.random.seed(237)
 
-concatenated_batch_dir = os.path.join(
-    save_dir, 'concatenated_shuffled_thumbnails'
-    )
+        disable_eager_execution()
+        # needed for keras.Model not to throw
+        # "You are passing KerasTensor(type_spec=TensorSpec(shape=()..." error
+        # this fix is compatible with tensorflow 2.6.3
 
-tensorboard_log_dir = os.path.join(save_dir, 'tensorboard_logs/fit')
+        # create output directories
+        if not os.path.exists(save_dir):
+            os.mkdir(save_dir)
 
-###############################################################################
+        shuffled_batch_dir = os.path.join(
+            save_dir, 'shuffled_thumbnail_batches'
+            )
 
-# read training thumbnails (16-bit unsigned integer format)
-z1_train_path = (
-    '/Users/greg/projects/vae/output/2_cellcutter_output_win30/' +
-    'train_thumbnails_30'
-    )
-X_train = zarr.open(z1_train_path)
+        concatenated_batch_dir = os.path.join(
+            save_dir, 'concatenated_shuffled_thumbnails'
+            )
 
-# read validation thumbnails (16-bit unsigned integer format)
-z1_validate_path = (
-    '/Users/greg/projects/vae/output/2_cellcutter_output_win30/' +
-    'validate_thumbnails_30'
-    )
-X_valid = zarr.open(z1_validate_path)
+        tensorboard_log_dir = os.path.join(save_dir, 'tensorboard_logs/fit')
 
-###############################################################################
+        # read training thumbnails (16-bit unsigned integer format)
+        path_numbers = re.findall(r'\d+', cellcutter_output_path)
+        window_size = [int(i) for i in path_numbers][-1]
 
-# elect to hold a slice of data into memory
-# X_train1 = X_train[:, 0:10000, :, :]
-# X_valid1 = X_valid[:, 0:10000, :, :]
+        z1_train_path = (
+            os.path.join(cellcutter_output_path,
+                         f"train_thumbnails_{window_size}.zarr")
+            )
+        store = zarr.ZipStore(z1_train_path, mode='r')
+        X_train = zarr.open(store=store)
 
-# or read the full training and validation datasets
-X_train1 = X_train
-X_valid1 = X_valid
+        # read validation thumbnails (16-bit unsigned integer format)
+        z1_validate_path = (
+            os.path.join(cellcutter_output_path,
+                         f"validate_thumbnails_{window_size}.zarr")
+            )
+        store = zarr.ZipStore(z1_validate_path, mode='r')
+        X_valid = zarr.open(store=store)
 
-###############################################################################
+        #######################################################################
 
-# read percentile cutoffs selected in script 4_feature_preprocessing_selections
-with open(
-  '/Users/greg/projects/vae/output/4_feature_preprocessing_selections'
-  '/cutoffs.pkl',
-  'rb') as handle:
-    cutoffs = pickle.load(handle)
+        # elect to hold a slice of data into memory
+        # X_train1 = X_train[:, 0:10000, :, :]
+        # X_valid1 = X_valid[:, 0:10000, :, :]
 
-###############################################################################
+        # or read the full training and validation datasets
+        X_train1 = X_train
+        X_valid1 = X_valid
 
-# compute number of training and validation steps per epoch
-steps_per_epoch = int(np.ceil(X_train1.shape[1]/batch_size))
-validation_steps = int(np.ceil(X_valid1.shape[1]/batch_size))
+        #######################################################################
 
-# initialize batch generators
-training_batch_generator = batch_generator(
-    X=X_train1, batch_size=batch_size, steps=steps_per_epoch
-    )
-validation_batch_generator = batch_generator(
-    X=X_valid1, batch_size=batch_size, steps=validation_steps
-    )
+        # read percent cutoffs selected in feature_preprocessing_selections()
+        with open(
+            os.path.join(feature_preprocessing_path, 'cutoffs.pkl'), 'rb'
+          ) as handle:
+            cutoffs = pickle.load(handle)
 
-# train VAE
-(encoder, decoder, z_mu) = TrainVAE(
-    img_shape=(X_train1.shape[2], X_train1.shape[3], X_train1.shape[0]),
-    learning_rate=0.001,  # 0.0008 try higher and adaptive learning rates
-    training_epochs=100
-    )
+        # compute number of training and validation steps per epoch
+        steps_per_epoch = int(np.ceil(X_train1.shape[1]/batch_size))
+        validation_steps = int(np.ceil(X_valid1.shape[1]/batch_size))
+
+        # initialize batch generators
+        training_batch_generator = batch_generator(
+            X=X_train1, batch_size=batch_size, steps=steps_per_epoch
+            )
+        validation_batch_generator = batch_generator(
+            X=X_valid1, batch_size=batch_size, steps=validation_steps
+            )
+
+        # train VAE
+        (encoder, decoder, z_mu) = train(
+            img_shape=(
+                X_train1.shape[2], X_train1.shape[3], X_train1.shape[0]),
+            learning_rate=config.learning_rate,
+            training_epochs=config.training_epochs
+            )

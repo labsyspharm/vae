@@ -1,0 +1,59 @@
+{% set name = "vae" %}
+{% set version = "0.0.1" %}
+
+package:
+  name: "{{ name|lower }}"
+  version: "{{ version }}"
+
+source:
+  git_url: https://github.com/labsyspharm/vae.git
+  git_tag: main
+build:
+  number: 0
+  script:
+    - "{{ PYTHON }} -m pip install . --no-deps --ignore-installed -vv "
+  entry_points:
+    - vae=vae.scripts.__main__:main
+  noarch: python
+
+requirements:
+  build:
+    - poetry
+  host:
+    - pip
+    - python
+    - poetry
+  run:
+    - python
+    - dask
+    - zarr
+    - hdbscan
+    - umap_learn
+    - keras
+    - lazy_ops
+    - matplotlib
+    - natsort
+    - numpy
+    - pandas
+    # pyymal
+    - scikit-image
+    # scikit_learn
+    # scipy
+    - seaborn
+    - tensorflow==2.6.3
+    - tifffile
+
+test:
+  imports:
+    - vae
+
+about:
+  home: https://github.com/labsyspharm/vae
+  license: MIT
+  license_family: BSD
+  summary: "Generate thumbnail images of cells from a multi-channel TIFF image, train a VAE model, and perform clustering on latent space vectors."
+  description-file: README.md
+
+extra:
+  recipe-maintainers:
+    - Gregory J. Baker <gregory_baker2@hms.harvard.edu>
