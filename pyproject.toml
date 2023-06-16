@@ -1,0 +1,42 @@
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "VAE"
+version = "0.0.1"
+description = "Generate thumbnail images of cells from a multi-channel TIFF image, train a VAE model, and perform clustering on latent space vectors."
+readme = "README.md"
+license = "MIT"
+keywords =['VAE segmentation-free celltype inference']
+classifiers=[
+    'Development Status :: 4 - Beta',
+    'Intended Audience :: End Users/Desktop',
+    'Intended Audience :: Science/Research',
+    'License :: OSI Approved :: MIT License',
+    'Natural Language :: English',
+    'Operating System :: OS Independent',
+    'Programming Language :: Python :: 3',
+    'Topic :: Scientific/Engineering :: Visualization'
+]
+authors = ["Gregory J. Baker <gregory_baker2@hms.harvard.edu>"]
+homepage = "https://github.com/labsyspharm/vae"
+
+[tool.poetry.dependencies]
+dask = "*"
+zarr = "*"
+hdbscan = "*"
+umap_learn = "*"
+keras = "*"
+lazy_ops = "*"
+matplotlib = "*"
+natsort = "*"
+numpy = "*"
+pandas = "*"
+scikit-image = "*"
+seaborn = "*"
+tensorflow = "2.6.3"
+tifffile = "*"
+
+[tool.poetry.scripts]
+vae = "vae.scripts.__main__:main"
