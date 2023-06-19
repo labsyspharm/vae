@@ -1,11 +1,11 @@
 output_path: "/Users/greg/Desktop/vae_pipeline_tests/window_14"
-csv_path: "/Volumes/T7 Shield/cylinter_input/clean_quant/output_3d_v2/consensus_clustering.parquet"
+csv_path: "/Volumes/T7 Shield/cylinter_input/clean_quant/output_3d_v2/consensus_clustering.parquet"  # .csv and .parquet file extensions are supported
 tif_path: "/Volumes/T7 Shield/cylinter_input/sardana-097/tif/WD-76845-097.ome.tif"
 outlines_path: "/Volumes/T7 Shield/cylinter_input/sardana-097/seg/WD-76845-097.ome.tif"
 mask_path: "/Volumes/T7 Shield/cylinter_input/sardana-097/mask/WD-76845-097.tif"
 markers_path: "/Volumes/T7 Shield/cylinter_input/sardana-097/markers.csv"
-tif_channels: "anti_CD3, anti_CD45RO, Keratin_570, aSMA_660, CD4_488, CD45_PE, PD1_647, CD20_488, CD68_555, CD8a_660, CD163_488, FOXP3_570, PDL1_647, Ecad_488, Vimentin_555, CDX2_647, LaminABC_488, Desmin_555, CD31_647, PCNA_488, CollagenIV_647"
-viz_channels: "Ecad_488, Keratin_570, aSMA_660, CD4_488, CD20_488, CD8a_660, FOXP3_570, Vimentin_555"
+tif_channels: ["anti_CD3", "anti_CD45RO", "Keratin_570", "aSMA_660", "CD4_488", "CD45_PE", "PD1_647", "CD20_488", "CD68_555", "CD8a_660", "CD163_488", "FOXP3_570", "PDL1_647", "Ecad_488", "Vimentin_555", "CDX2_647", "LaminABC_488", "Desmin_555", "CD31_647", "PCNA_488", "CollagenIV_647"]
+viz_channels: ["Ecad_488", "Keratin_570", "aSMA_660", "CD4_488", "CD20_488", "CD8a_660", "FOXP3_570", "Vimentin_555"]
 contrast_path: "/Volumes/T7 Shield/cylinter_input/clean_quant/output_3d_v2/contrast/contrast_limits.yml"
 percent_cells: 0.5
 window_size: 14
@@ -14,8 +14,8 @@ gallery_size: 240
 latent_dimension: 184
 batch_size: 32
 learning_rate: 0.001
-training_epochs: 100
-cluster_full_dataset: True  # cluster training, validation, and test data or use a sample of test data
+training_epochs: 1
+cluster_full_dataset: False  # cluster training, validation, and test data or use a sample of test data
 clustering_sample_size: 2000 # used when cluster_full_dataset is False
 embedding_algorithm: UMAP # or TSNE
 hdbscan_min_cluster_size: 300
@@ -27,4 +27,4 @@ channel_colors:
   CD8a_660: [9, 'tab:green']
   CD163_488: [10, 'tab:purple']
   FOXP3_570: [11, 'tab:cyan']
-  PCNA_488': [19, 'tab:pink']
+  PCNA_488: [19, 'tab:pink']

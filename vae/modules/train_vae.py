@@ -1,6 +1,7 @@
 import logging
 
 import os
+import re
 import random
 import datetime
 import pickle
@@ -26,9 +27,6 @@ from ..utils import log_banner, log_multiline
 logger = logging.getLogger(__name__)
 # log_multiline(logger.info, pd.DataFrame().to_string(index=False))
 
-# currently, a virtualenv with tensorflow 2.6.3 is needed to run this script.
-
-
 # to run this script interactively:
 # srun --pty -t 12:00:00 --mem=200G -p gpu --gres=gpu:4 bash
 # source ~/venvs/vae/bin/activate
@@ -42,10 +40,6 @@ logger = logging.getLogger(__name__)
 # needed for keras.Model not to throw
 # "You are passing KerasTensor(type_spec=TensorSpec(shape=()..." error
 # this fix is compatible with tensorflow 2.6.3
-
-# clear backend, set random state seed
-# K.clear_session()
-# np.random.seed(237)
 
 
 def chunks(lst, thumbs_per_batch):
@@ -65,22 +59,26 @@ def transposeZarr(z):
 
 
 class ShuffleData(keras.callbacks.Callback):
+    def __init__(self, X_train1, X_train, shuffled_batch_dir, concatenated_batch_dir):
+        self.X_train1 = X_train1
+        self.X_train = X_train
+        self.shuffled_batch_dir = shuffled_batch_dir
+        self.concatenated_batch_dir = concatenated_batch_dir
 
-    def on_epoch_end(self, epoch, logs=None):
+    def on_epoch_begin(self, epoch, logs=None):
 
         keys = list(logs.keys())
 
         print()
 
-        X = X_train1
+        X = self.X_train1
 
         if isinstance(X, np.ndarray):
-
             # convert X to Zarr format if not already
             z = zarr.zeros(
                 shape=(X.shape[0], X.shape[1], X.shape[2], X.shape[3]),
-                chunks=(X_train.chunks[0], X_train.chunks[1],
-                        X_train.chunks[2], X_train.chunks[3])
+                chunks=(self.X_train.chunks[0], self.X_train.chunks[1],
+                        self.X_train.chunks[2], self.X_train.chunks[3])
                         )
             z[:] = X
             X = z
@@ -99,15 +97,15 @@ class ShuffleData(keras.callbacks.Callback):
                 f'of length {len(batch)}...')
 
             X_shuffle = zarr.open(
-                os.path.join(shuffled_batch_dir, f'batch_{e+1}'),
+                os.path.join(self.shuffled_batch_dir, f'batch_{e+1}'),
                 mode='w',
                 shape=(
                     X.shape[0], len(batch),
                     X.shape[2], X.shape[3]
                     ),
                 chunks=(
-                    X_train.chunks[0], X_train.chunks[1],
-                    X_train.chunks[2], X_train.chunks[3]
+                    self.X_train.chunks[0], self.X_train.chunks[1],
+                    self.X_train.chunks[2], self.X_train.chunks[3]
                     ),
                 compressor=X.compressor,
                 dtype='float32'
@@ -118,7 +116,7 @@ class ShuffleData(keras.callbacks.Callback):
             rng.shuffle(shuffle, axis=1)
             X_shuffle[:] = shuffle
 
-        batches = [i for i in os.listdir(shuffled_batch_dir)]
+        batches = [i for i in os.listdir(self.shuffled_batch_dir)]
         random.shuffle(batches)
 
         for e, i in enumerate(batches):
@@ -126,14 +124,14 @@ class ShuffleData(keras.callbacks.Callback):
             print(i)
 
             z = zarr.open(
-                os.path.join(shuffled_batch_dir, i), mode='r'
+                os.path.join(self.shuffled_batch_dir, i), mode='r'
                 )
 
             if e == 0:
 
                 # initialize zarr to store shuffled batches
                 shuffle_final = zarr.open(
-                    concatenated_batch_dir,
+                    self.concatenated_batch_dir,
                     mode='w',
                     shape=(
                         z.shape[0], z.shape[1],
@@ -153,7 +151,7 @@ class ShuffleData(keras.callbacks.Callback):
             shuffle_final.append(z, axis=1)
 
 
-def batch_generator(X, batch_size, steps):
+def batch_generator(X, X_train, batch_size, steps, cutoffs, concatenated_batch_dir):
 
     idx_start = 0
     idx_stop = batch_size
@@ -236,7 +234,7 @@ def batch_generator(X, batch_size, steps):
             step_counter = 1
 
 
-def train(img_shape, training_epochs, learning_rate):
+def train(X_train1, X_train, img_shape, training_batch_generator, validation_batch_generator, steps_per_epoch, validation_steps, training_epochs, learning_rate, latent_dimension, save_dir, concatenated_batch_dir):
 
     # ENCODER NETWORK: Input -> Conv2D*4 -> Flatten -> Dense
     input_img = keras.Input(shape=img_shape)
@@ -268,18 +266,18 @@ def train(img_shape, training_epochs, learning_rate):
     shape_before_flattening = K.int_shape(x)
 
     x = layers.Flatten()(x)
-    # 850 was hardcoded here instead of latent_dim
-    x = layers.Dense(latent_dim, activation='relu')(x)  # 850, was 32
+    # 850 was hardcoded here instead of latent_dimension
+    x = layers.Dense(latent_dimension, activation='relu')(x)  # 850, was 32
 
     # two outputs, latent mean and (log)variance
-    z_mu = layers.Dense(latent_dim, name='z_mu')(x)
-    z_log_sigma = layers.Dense(latent_dim, name='z_log_sigma')(x)
+    z_mu = layers.Dense(latent_dimension, name='z_mu')(x)
+    z_log_sigma = layers.Dense(latent_dimension, name='z_log_sigma')(x)
 
     # SAMPLING FUNCTION
     def sampling(args):
         z_mu, z_log_sigma = args
         epsilon = K.random_normal(
-            shape=(K.shape(z_mu)[0], latent_dim),
+            shape=(K.shape(z_mu)[0], latent_dimension),
             mean=0.0, stddev=1.0
             )
         return z_mu + K.exp(z_log_sigma) * epsilon
@@ -306,7 +304,7 @@ def train(img_shape, training_epochs, learning_rate):
         activation='relu', strides=(2, 2)
         )(x)
     x = layers.Conv2D(
-        filters=X_train1.shape[0], kernel_size=3,
+        filters=img_shape[2], kernel_size=3,
         padding='same', activation='sigmoid'
         )(x)
 
@@ -358,6 +356,7 @@ def train(img_shape, training_epochs, learning_rate):
         save_weights_only=True
         )
 
+    tensorboard_log_dir = os.path.join(save_dir, 'tensorboard_logs/fit')
     log_dir = os.path.join(
         tensorboard_log_dir,
         datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -367,7 +366,7 @@ def train(img_shape, training_epochs, learning_rate):
     print(
         'To monitor model training: Open new terminal window, ' +
         'step into VAE virtual environment, ' +
-        'run tensorboard --logdir <path_to_tensorboard_fit'
+        'run tensorboard --logdir <path_to_tensorboard_fit>'
         )
     print()
 
@@ -379,13 +378,19 @@ def train(img_shape, training_epochs, learning_rate):
             tf.train.latest_checkpoint(checkpoint_path)
             ).expect_partial()
 
+    shuffled_batch_dir = os.path.join(
+        save_dir, 'shuffled_thumbnail_batches'
+        )
+
     vae.fit(training_batch_generator,
             epochs=training_epochs,
             steps_per_epoch=steps_per_epoch,
             verbose=1, use_multiprocessing=False,
             validation_data=validation_batch_generator,
             validation_steps=validation_steps,
-            callbacks=[model_checkpoint, tensorboard, ShuffleData()]
+            callbacks=[model_checkpoint, tensorboard,
+                       ShuffleData(X_train1, X_train,
+                                   shuffled_batch_dir, concatenated_batch_dir)]
             )
 
     # encoder model statement
@@ -400,22 +405,22 @@ def train(img_shape, training_epochs, learning_rate):
         decoder, f'{save_dir}/decoder.hdf5',
         overwrite=True, include_optimizer=True)
 
-    return z_mu
-
 
 def TRAIN_VAE(config):
+    if not os.path.isfile(
+      os.path.join(config.output_path, 'checkpoints/TRAIN_VAE.txt')):
 
-    cellcutter_output_path = os.path.join(
-        config.output_path, f'2_cellcutter_output_win{config.window_size}'
-        )
+        cellcutter_output_path = os.path.join(
+            config.output_path, f'2_cellcutter_output_win{config.window_size}'
+            )
 
-    feature_preprocessing_path = os.path.join(
-        config.output_path, '4_feature_preprocessing_selections'
-        )
+        feature_preprocessing_path = os.path.join(
+            config.output_path, '4_feature_preprocessing_selections'
+            )
 
-    save_dir = os.path.join(config.output_path, '5_train_vae')
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
+        save_dir = os.path.join(config.output_path, '5_train_vae')
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
 
         # clear backend, set random state seed
         K.clear_session()
@@ -430,15 +435,9 @@ def TRAIN_VAE(config):
         if not os.path.exists(save_dir):
             os.mkdir(save_dir)
 
-        shuffled_batch_dir = os.path.join(
-            save_dir, 'shuffled_thumbnail_batches'
-            )
-
         concatenated_batch_dir = os.path.join(
             save_dir, 'concatenated_shuffled_thumbnails'
             )
-
-        tensorboard_log_dir = os.path.join(save_dir, 'tensorboard_logs/fit')
 
         # read training thumbnails (16-bit unsigned integer format)
         path_numbers = re.findall(r'\d+', cellcutter_output_path)
@@ -478,21 +477,34 @@ def TRAIN_VAE(config):
             cutoffs = pickle.load(handle)
 
         # compute number of training and validation steps per epoch
-        steps_per_epoch = int(np.ceil(X_train1.shape[1]/batch_size))
-        validation_steps = int(np.ceil(X_valid1.shape[1]/batch_size))
+        steps_per_epoch = int(np.ceil(X_train1.shape[1]/config.batch_size))
+        validation_steps = int(np.ceil(X_valid1.shape[1]/config.batch_size))
 
         # initialize batch generators
         training_batch_generator = batch_generator(
-            X=X_train1, batch_size=batch_size, steps=steps_per_epoch
+            X=X_train1, X_train=X_train, batch_size=config.batch_size,
+            steps=steps_per_epoch, cutoffs=cutoffs,
+            concatenated_batch_dir=concatenated_batch_dir
             )
         validation_batch_generator = batch_generator(
-            X=X_valid1, batch_size=batch_size, steps=validation_steps
+            X=X_valid1, X_train=X_train, batch_size=config.batch_size,
+            steps=validation_steps, cutoffs=cutoffs,
+            concatenated_batch_dir=concatenated_batch_dir
             )
 
         # train VAE
-        (encoder, decoder, z_mu) = train(
+        train(
+            X_train1=X_train1,
+            X_train=X_train,
             img_shape=(
                 X_train1.shape[2], X_train1.shape[3], X_train1.shape[0]),
+            training_batch_generator=training_batch_generator,
+            validation_batch_generator=validation_batch_generator,
+            steps_per_epoch=steps_per_epoch,
+            validation_steps=validation_steps,
             learning_rate=config.learning_rate,
-            training_epochs=config.training_epochs
+            training_epochs=config.training_epochs,
+            latent_dimension=config.latent_dimension,
+            save_dir=save_dir,
+            concatenated_batch_dir=concatenated_batch_dir
             )

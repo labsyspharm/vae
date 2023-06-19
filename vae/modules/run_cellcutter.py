@@ -23,21 +23,22 @@ def RUN_CELLCUTTER(config):
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
-        markers = pd.read_csv(markers_path)
+        markers = pd.read_csv(config.markers_path)
 
         cellcutter_marker_ids = []
-        for i in cellcutter_markers:
+        for i in config.tif_channels:
             id = markers['channel_number'][
                 markers['marker_name'] == i].values[0]
             cellcutter_marker_ids.append(str(id))
 
-        for name in ['train', 'validate', 'test']:
+        for name in ['test', 'train', 'validate']:
             print()
             print(f'Cutting {name} data...')
             run(
-                ["cut_cells", "-z", "--window-size", window_size,
-                 "--cells-per-chunk", config.cells_per_chunk,
-                 "--cache-size", "57711", image_path, mask_path,
+                ["cut_cells", "-z", "--window-size", str(config.window_size),
+                 "--cells-per-chunk", str(config.cells_per_chunk),
+                 "--cache-size", "57711", str(config.tif_path),
+                 str(config.mask_path),
                  os.path.join(cellcutter_input_path, f"{name}.csv"),
                  os.path.join(
                     save_dir, f"{name}_thumbnails_{config.window_size}.zarr"),
@@ -45,9 +46,10 @@ def RUN_CELLCUTTER(config):
                 )
 
             run(
-                ["cut_cells", "-z", "--window-size", window_size,
-                 "--cells-per-chunk", cells_per_chunk, "--cache-size", "57711",
-                 seg_path, mask_path,
+                ["cut_cells", "-z", "--window-size", str(config.window_size),
+                 "--cells-per-chunk", str(config.cells_per_chunk),
+                 "--cache-size", "57711",
+                 str(config.outlines_path), str(config.mask_path),
                  os.path.join(cellcutter_input_path, f"{name}.csv"),
                  os.path.join(
                     save_dir,

@@ -15,11 +15,11 @@ class Config:
         config.output_path = pathlib.Path(data['output_path']).resolve()
         config.csv_path = pathlib.Path(data['csv_path']).resolve()
         config.tif_path = pathlib.Path(data['tif_path']).resolve()
-        config.outlines_path = pathlib.Path(data['tif_path']).resolve()
-        config.mask_path = pathlib.Path(data['tif_path']).resolve()
+        config.outlines_path = pathlib.Path(data['outlines_path']).resolve()
+        config.mask_path = pathlib.Path(data['mask_path']).resolve()
         config.markers_path = pathlib.Path(data['markers_path']).resolve()
         config.contrast_path = pathlib.Path(data['contrast_path']).resolve()
-        config.tif_channels = list(data['image_channels'])
+        config.tif_channels = list(data['tif_channels'])
         config.viz_channels = list(data['viz_channels'])
         config.percent_cells = float(data['percent_cells'])
         config.window_size = int(data['window_size'])
@@ -38,7 +38,7 @@ class Config:
 
     @property
     def checkpoint_path(self):
-        return self.output / 'checkpoints'
+        return self.output_path / 'checkpoints'
 
     def __repr__(self):
         kwargs_str = ', '.join(f"{k}={v!r}" for k, v in self.__dict__.items())

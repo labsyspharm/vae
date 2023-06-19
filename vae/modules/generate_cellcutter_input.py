@@ -15,12 +15,12 @@ def GENERATE_CELLCUTTER_INPUT(config):
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
-        extension = os.path.splitext(csv_path)[1]
+        extension = os.path.splitext(config.csv_path)[1]
         ext = extension.split('.')[1]
         if ext == 'parquet':
-            csv = pd.read_parquet(csv_path)
+            csv = pd.read_parquet(config.csv_path)
         elif ext == 'csv':
-            csv = pd.read_csv(csv_path)
+            csv = pd.read_csv(config.csv_path)
         else:
             raise ValueError(
                 f'Note: extension type {extension} not yet supported.'
@@ -43,8 +43,8 @@ def GENERATE_CELLCUTTER_INPUT(config):
             )
 
         csv = csv.sample(
-            frac=F, replace=False, weights=weights['weights'],
-            random_state=0, axis=0
+            frac=config.percent_cells, replace=False,
+            weights=weights['weights'], random_state=0, axis=0
             )
         print()
         print('Cells per cluster after cluster-weighted random sampling:')

@@ -25,23 +25,17 @@ requirements:
     - poetry
   run:
     - python
-    - dask
     - zarr
     - hdbscan
-    - umap_learn
+    - umap-learn
     - keras
-    - lazy_ops
-    - matplotlib
     - natsort
-    - numpy
     - pandas
-    # pyymal
-    - scikit-image
-    # scikit_learn
-    # scipy
+    - pyarrow
+    - pyyaml
     - seaborn
-    - tensorflow==2.6.3
-    - tifffile
+    - tensorflow
+    - cellcutter
 
 test:
   imports:

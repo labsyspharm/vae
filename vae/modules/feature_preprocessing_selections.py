@@ -35,7 +35,7 @@ def MAKE_FEATURE_PROCESSING_SELECTIONS(config):
 
         # loop over cellcutter channels
         cutoffs = {}
-        for e, marker in enumerate(config.image_channels):
+        for e, marker in enumerate(config.tif_channels):
 
             print(marker)
 

@@ -2,7 +2,9 @@ import logging
 
 import os
 import math
+import yaml
 import numpy as np
+import pandas as pd
 
 from matplotlib import pyplot as plt
 from matplotlib.lines import Line2D
@@ -19,7 +21,7 @@ logger = logging.getLogger(__name__)
 # log_multiline(logger.info, pd.DataFrame().to_string(index=False))
 
 
-def PlotInputImgs(numExamples, numColumns, imgs, labels, fontSize, colors, channelNames, channelIDs, fileName, contrast_limits):
+def PlotInputImgs(numExamples, numColumns, imgs, labels, fontSize, colors, channelNames, channelIDs, fileName, contrast_limits, save_dir):
 
     numSamples = len(imgs)
     numRows = math.ceil(numExamples/numColumns)
@@ -85,12 +87,16 @@ def GENERATE_IMAGE_GALLERY(config):
         config.output_path, '1_cellcutter_input'
         )
 
+    cellcutter_output_path = os.path.join(
+        config.output_path, f'2_cellcutter_output_win{config.window_size}'
+        )
+
     save_dir = os.path.join(config.output_path, '3_thumbnail_examples')
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
         viz_marker_ids = [
-            cellcutter_markers.index(i) for i in config.viz_channels
+            config.tif_channels.index(i) for i in config.viz_channels
             ]
 
         if not os.path.exists(save_dir):
@@ -113,7 +119,7 @@ def GENERATE_IMAGE_GALLERY(config):
 
         # pull random thumbnails from training data to check quality
         thumb_ids = np.random.RandomState(1).choice(
-            range(0, z.shape[1]), num_examples, replace=False)
+            range(0, z.shape[1]), config.gallery_size, replace=False)
 
         imgs = z.get_orthogonal_selection((slice(None), thumb_ids))
 
@@ -124,14 +130,15 @@ def GENERATE_IMAGE_GALLERY(config):
         colors = plt.get_cmap('tab10').colors * math.ceil(imgs.shape[3]/10)
 
         PlotInputImgs(
-            numExamples=num_examples,
+            numExamples=config.gallery_size,
             numColumns=16,
             imgs=imgs,
             labels=labels,
             fontSize=8,
             colors=colors,
-            channelNames=viz_markers,
+            channelNames=config.viz_channels,
             channelIDs=viz_marker_ids,
             fileName='thumbnail_examples',
-            contrast_limits=contrast_limits
+            contrast_limits=contrast_limits,
+            save_dir=save_dir
             )
