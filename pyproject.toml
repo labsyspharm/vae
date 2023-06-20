@@ -23,7 +23,7 @@ authors = ["Gregory J. Baker <gregory_baker2@hms.harvard.edu>"]
 homepage = "https://github.com/labsyspharm/vae"
 
 [tool.poetry.dependencies]
-zarr = "<=2.14.2" # change in API related to zarr.LRUStoreCache() in versions > 2.14.2 called on line 87 in cellcutter/utils.py (returns blank images)
+zarr = "<=2.14.2"
 hdbscan = "*"
 umap-learn = "*"
 keras = "*"

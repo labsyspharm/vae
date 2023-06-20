@@ -12,6 +12,7 @@ build:
   number: 0
   script:
     - "{{ PYTHON }} -m pip install . --no-deps --ignore-installed -vv "
+    - "{{ PYTHON }} -m pip install git+https://github.com/catalystneuro/lazy_ops.git@master -vv "
   entry_points:
     - vae=vae.scripts.__main__:main
   noarch: python
@@ -25,7 +26,7 @@ requirements:
     - poetry
   run:
     - python
-    - zarr
+    - zarr<=2.14.2  # change in API related to zarr.LRUStoreCache() in versions > 2.14.2 called on line 87 in cellcutter/utils.py (returns blank images)
     - hdbscan
     - umap-learn
     - keras
@@ -34,7 +35,7 @@ requirements:
     - pyarrow
     - pyyaml
     - seaborn
-    - tensorflow
+    - tensorflow  # currently requires python <3.11 to be installed via conda
     - cellcutter
 
 test:
