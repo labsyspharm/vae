@@ -23,6 +23,7 @@ class Config:
         config.viz_channels = list(data['viz_channels'])
         config.percent_cells = float(data['percent_cells'])
         config.window_size = int(data['window_size'])
+        config.cache_size_cellcutter = int(data['cache_size_cellcutter'])
         config.cells_per_chunk = int(data['cells_per_chunk'])
         config.gallery_size = int(data['gallery_size'])
         config.latent_dimension = int(data['latent_dimension'])
@@ -34,6 +35,7 @@ class Config:
         config.embedding_algorithm = str(data['embedding_algorithm'])
         config.channel_colors = dict(data['channel_colors'])
         config.hdbscan_min_cluster_size = int(data['hdbscan_min_cluster_size'])
+        config.lasso_vector_tool = bool(data['lasso_vector_tool'])
         return config
 
     @property

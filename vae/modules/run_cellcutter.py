@@ -37,7 +37,7 @@ def RUN_CELLCUTTER(config):
             run(
                 ["cut_cells", "-z", "--window-size", str(config.window_size),
                  "--cells-per-chunk", str(config.cells_per_chunk),
-                 "--cache-size", "57711", str(config.tif_path),
+                 "--cache-size", str(config.cache_size_cellcutter), str(config.tif_path),
                  str(config.mask_path),
                  os.path.join(cellcutter_input_path, f"{name}.csv"),
                  os.path.join(
@@ -48,7 +48,7 @@ def RUN_CELLCUTTER(config):
             run(
                 ["cut_cells", "-z", "--window-size", str(config.window_size),
                  "--cells-per-chunk", str(config.cells_per_chunk),
-                 "--cache-size", "57711",
+                 "--cache-size", str(config.cache_size_cellcutter),
                  str(config.outlines_path), str(config.mask_path),
                  os.path.join(cellcutter_input_path, f"{name}.csv"),
                  os.path.join(

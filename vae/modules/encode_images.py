@@ -302,7 +302,7 @@ def PlotLatentSpace(reconstructions, zoom, X_encoded_embedded, X_decoded, y, cha
         return label_color_dict
 
 
-def InterpolationGrid(orig_input_dims, grid_size, X_encoded, y, decoder, label_color_dict, channel_color_dict, frac_of_scatter_points, scatter_point_size, make_sample_sizes_equal, img_brightness_multiplier, scatter_point_alpha):
+def InterpolationGrid(orig_input_dims, grid_size, X_encoded, y, decoder, label_color_dict, channel_color_dict, frac_of_scatter_points, scatter_point_size, make_sample_sizes_equal, img_brightness_multiplier, scatter_point_alpha, save_dir):
 
     # make lists to store grid coordinates and their indices
     # for every latent space dimension
@@ -310,7 +310,7 @@ def InterpolationGrid(orig_input_dims, grid_size, X_encoded, y, decoder, label_c
     indices = []
 
     # grab dimensions in reverse order (e.g. 3, 2, 1, 0) with grids.reverse()
-    for d in range(config.latent_dimension):
+    for d in range(2):
 
         # round minimum latent variable in dimension 'd' down to 100th place
         flr = math.floor(X_encoded[:, d].min() * 100.0) / 100.0
@@ -618,7 +618,7 @@ def LassoVectors(decoder, clustering_labels, cutoffs, contrast_limits, orig_inpu
             c = [label_color_dict[i] for i in y]
 
             legend_elements = []
-            for i in np.unique(clustering.labels_):
+            for i in np.unique(clustering_labels):
                 markerfacecolor = label_color_dict[i]
                 legend_elements.append(
                     Line2D([0], [0], marker='o', color='w',
@@ -1055,9 +1055,9 @@ def categorical_cmap(numUniqueSamples, numCatagories, cmap='tab10', continuous=F
 
     return cmap
 
-myparam = 'shit'
+
 def ENCODE_IMAGES(config):
-    print(myparam)
+    
     training_thumb_dims = (
         config.window_size, config.window_size, len(config.tif_channels)
         )
@@ -1453,31 +1453,33 @@ def ENCODE_IMAGES(config):
             make_sample_sizes_equal=False,
             img_brightness_multiplier=1.2,
             scatter_point_alpha=1.0,
+            save_dir=save_dir
             )
 
-    # get input and output images of lassoed latent vectors
-    LassoVectors(
-        decoder=decoder,
-        clustering_labels=clustering.labels_,
-        cutoffs=cutoffs,
-        contrast_limits=contrast_limits,
-        orig_input_dims=training_thumb_dims,
-        imgs_instead_of_points=True,
-        zoom=0.5,
-        X=X_test1,
-        X_seg=X_test1_seg,
-        X_encoded=X_encoded,
-        X_encoded_embedded=X_encoded_embedded,
-        X_decoded=X_decoded,
-        y=y_test1['cluster'],
-        numColumns=10,
-        intensity_multiplier=1.1,
-        label_color_dict=label_color_dict,
-        channel_color_dict=config.channel_colors,
-        max_examples=1000,
-        thumbnail_font_size=3.0,
-        save_dir=save_dir
-        )
+    # get input and output images of lassoed latent vectors for targeted analysis of regions 
+    if config.lasso_vector_tool:
+        LassoVectors(
+            decoder=decoder,
+            clustering_labels=clustering.labels_,
+            cutoffs=cutoffs,
+            contrast_limits=contrast_limits,
+            orig_input_dims=training_thumb_dims,
+            imgs_instead_of_points=True,
+            zoom=0.5,
+            X=X_test1,
+            X_seg=X_test1_seg,
+            X_encoded=X_encoded,
+            X_encoded_embedded=X_encoded_embedded,
+            X_decoded=X_decoded,
+            y=y_test1['cluster'],
+            numColumns=10,
+            intensity_multiplier=1.1,
+            label_color_dict=label_color_dict,
+            channel_color_dict=config.channel_colors,
+            max_examples=1000,
+            thumbnail_font_size=3.0,
+            save_dir=save_dir
+            )
 
     PlotReconstructedImages(
         orig_input_dims=training_thumb_dims,

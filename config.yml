@@ -1,20 +1,22 @@
-output_path: "/Users/greg/Desktop/vae_pipeline_tests/window_14"
-csv_path: "/Volumes/T7 Shield/cylinter_input/clean_quant/output_3d_v2/consensus_clustering.parquet"  # .csv and .parquet file extensions are supported
-tif_path: "/Volumes/T7 Shield/cylinter_input/sardana-097/tif/WD-76845-097.ome.tif"
-outlines_path: "/Volumes/T7 Shield/cylinter_input/sardana-097/seg/WD-76845-097.ome.tif"
-mask_path: "/Volumes/T7 Shield/cylinter_input/sardana-097/mask/WD-76845-097.tif"
-markers_path: "/Volumes/T7 Shield/cylinter_input/sardana-097/markers.csv"
+output_path: "output/window14_LD5_1e"
+csv_path: "../../VAE/data/sardana/097/csv/consensus_clustering.parquet"  # .csv and .parquet file extensions are supported
+tif_path: "../../VAE/data/sardana/097/tif/WD-76845-097.ome.tif"
+outlines_path: "../../VAE/data/sardana/097/seg/WD-76845-097.ome.tif"
+mask_path: "../../VAE/data/sardana/097/mask/WD-76845-097.tif"
+markers_path: "../../VAE/data/sardana/097/markers.csv"
 tif_channels: ["anti_CD3", "anti_CD45RO", "Keratin_570", "aSMA_660", "CD4_488", "CD45_PE", "PD1_647", "CD20_488", "CD68_555", "CD8a_660", "CD163_488", "FOXP3_570", "PDL1_647", "Ecad_488", "Vimentin_555", "CDX2_647", "LaminABC_488", "Desmin_555", "CD31_647", "PCNA_488", "CollagenIV_647"]
 viz_channels: ["Ecad_488", "Keratin_570", "aSMA_660", "CD4_488", "CD20_488", "CD8a_660", "FOXP3_570", "Vimentin_555"]
-contrast_path: "/Volumes/T7 Shield/cylinter_input/clean_quant/output_3d_v2/contrast/contrast_limits.yml"
+contrast_path: "../../VAE/data/sardana/097/contrast_limits.yml"
 percent_cells: 0.5
 window_size: 14
 cells_per_chunk: 200
+cache_size_cellcutter: 57711 # Using too high a cache size may cause errors if you have insufficient RAM
 gallery_size: 240
-latent_dimension: 184
+latent_dimension: 5
 batch_size: 32
 learning_rate: 0.001
 training_epochs: 1
+lasso_vector_tool: False # Toggle to use lasso vector tool to further analyze a region
 cluster_full_dataset: False  # cluster training, validation, and test data or use a sample of test data
 clustering_sample_size: 2000 # used when cluster_full_dataset is False
 embedding_algorithm: UMAP # or TSNE
