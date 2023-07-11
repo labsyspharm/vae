@@ -1106,7 +1106,7 @@ def ENCODE_IMAGES(config):
     # read training thumbnails (16-bit unsigned integer format)
     z1_train_path = os.path.join(
         config.output_path,
-        '2_cellcutter_output_win14/train_thumbnails_14.zarr'
+        f'2_cellcutter_output_win{config.window_size}/train_thumbnails_{config.window_size}.zarr'
         )
     store = zarr.ZipStore(z1_train_path, mode='r')
     X_train = zarr.open(store=store)
@@ -1114,7 +1114,7 @@ def ENCODE_IMAGES(config):
     # read segmentation thumbnails for training data (16-bit unsigned integer)
     z1_train_path_seg = os.path.join(
         config.output_path,
-        '2_cellcutter_output_win14/train_thumbnails_14_seg.zarr'
+        f'2_cellcutter_output_win{config.window_size}/train_thumbnails_{config.window_size}_seg.zarr'
         )
     store = zarr.ZipStore(z1_train_path_seg, mode='r')
     X_train_seg = zarr.open(store=store)
@@ -1127,7 +1127,7 @@ def ENCODE_IMAGES(config):
     # read validation thumbnails (16-bit unsigned integer format)
     z1_validate_path = os.path.join(
         config.output_path,
-        '2_cellcutter_output_win14/validate_thumbnails_14.zarr'
+        f'2_cellcutter_output_win{config.window_size}/validate_thumbnails_{config.window_size}.zarr'
         )
     store = zarr.ZipStore(z1_validate_path, mode='r')
     X_validate = zarr.open(store=store)
@@ -1135,7 +1135,7 @@ def ENCODE_IMAGES(config):
     # read segmentation thumbnails for validation data (16-bit unsigned int)
     z1_validate_path_seg = os.path.join(
         config.output_path,
-        '2_cellcutter_output_win14/validate_thumbnails_14_seg.zarr'
+        f'2_cellcutter_output_win{config.window_size}/validate_thumbnails_{config.window_size}_seg.zarr'
         )
     store = zarr.ZipStore(z1_validate_path_seg, mode='r')
     X_validate_seg = zarr.open(store=store)
@@ -1148,7 +1148,7 @@ def ENCODE_IMAGES(config):
     # read test thumbnails (16-bit unsigned integer format)
     z1_test_path = os.path.join(
         config.output_path,
-        '2_cellcutter_output_win14/test_thumbnails_14.zarr'
+        f'2_cellcutter_output_win{config.window_size}/test_thumbnails_{config.window_size}.zarr'
         )
     store = zarr.ZipStore(z1_test_path, mode='r')
     X_test = zarr.open(store=store)
@@ -1156,7 +1156,7 @@ def ENCODE_IMAGES(config):
     # read segmentation thumbnails for test data (16-bit unsigned integer)
     z1_test_path_seg = os.path.join(
         config.output_path,
-        '2_cellcutter_output_win14/test_thumbnails_14_seg.zarr'
+        f'2_cellcutter_output_win{config.window_size}/test_thumbnails_{config.window_size}_seg.zarr'
         )
     store = zarr.ZipStore(z1_test_path_seg, mode='r')
     X_test_seg = zarr.open(store=store)
