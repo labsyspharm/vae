@@ -1,8 +1,7 @@
 ![](logo.png)
 
-## Cellular Entity Latent.
+## Cellular Entity Latent Analyzer.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Generate image patches of cells from a multi-channel TIFF
-image, train a VAE neural network, and performing clustering on latent space vector representations of input image patches.
+CELA is a software package for contextually-aware cell state inference in Whole-slide Multiplex Images of Tissue using a variational autoencoding deep learning network architecture.
