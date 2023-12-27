@@ -1,5 +1,5 @@
-import pathlib
 import yaml
+import pathlib
 
 
 class Config:
@@ -20,7 +20,6 @@ class Config:
         config.markers_path = pathlib.Path(data['markers_path']).resolve()
         config.contrast_path = pathlib.Path(data['contrast_path']).resolve()
         config.tif_channels = list(data['tif_channels'])
-        config.viz_channels = list(data['viz_channels'])
         config.percent_cells = float(data['percent_cells'])
         config.window_size = int(data['window_size'])
         config.cache_size_cellcutter = int(data['cache_size_cellcutter'])

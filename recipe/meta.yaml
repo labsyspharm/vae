@@ -6,8 +6,8 @@ package:
   version: "{{ version }}"
 
 source:
-  git_url: https://github.com/labsyspharm/vae.git
-  git_tag: main
+  git_url: https://github.com/gjbaker/vae.git
+  git_rev: main
 build:
   number: 0
   script:
@@ -26,7 +26,7 @@ requirements:
     - poetry
   run:
     - python
-    - zarr<=2.14.2  # change in API related to zarr.LRUStoreCache() in versions > 2.14.2 called on line 87 in cellcutter/utils.py (returns blank images)
+    - zarr
     - hdbscan
     - umap-learn
     - keras
@@ -35,8 +35,10 @@ requirements:
     - pyarrow
     - pyyaml
     - seaborn
-    - tensorflow  # currently requires python <3.11 to be installed via conda
+    - tensorflow
     - cellcutter
+    - opencv-python
+    - dask
 
 test:
   imports:

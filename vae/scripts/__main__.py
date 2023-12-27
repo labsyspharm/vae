@@ -1,11 +1,10 @@
 import sys
-import argparse
-import pathlib
 import logging
-import pandas as pd
+import pathlib
+import argparse
+
 from ..config import Config
 from .. import pipeline, components
-
 
 logger = logging.getLogger(__name__)
 
@@ -15,39 +14,27 @@ def main(argv=sys.argv):
     epilog = 'Pipeline modules:\n'
     epilog += '\n'.join(f"    {n}" for n in components.pipeline_module_names)
     parser = argparse.ArgumentParser(
-        description='Train a VAE model on image patches and cluster',
+        description='Train a VAE model on image patches and cluster latent vectors',
         epilog=epilog,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser = argparse.ArgumentParser(description='VAE Pipeline')
     parser._action_groups.pop()
-    required = parser.add_argument_group('required arguments')
-    optional = parser.add_argument_group('optional arguments')
+    
+    # required = parser.add_argument_group('required arguments')
+    # optional = parser.add_argument_group('optional arguments')
 
-    parser.add_argument(
-        "config", type=path_resolved,
-        help="Path to YAML configuration file"
-    )
-    parser.add_argument(
-        "--module", type=str,
-        help="Pipeline module at which to begin processing"
-    )
+    parser.add_argument("config", type=path_resolved, help="Path to YAML configuration file")
+    parser.add_argument("--module", type=str, help="Pipeline module at which to begin processing")
 
     args = parser.parse_args(argv[1:])
     if not validate_paths(args):
         return 1
     if args.module and args.module not in components.pipeline_module_names:
-        print(
-            f"scales: error: argument --module: " +
-            f"invalid choice '{args.module}'",
-            file=sys.stderr
-        )
+        print(f"Error: --module {args.module} is not a pipeline module", file=sys.stderr)
         return 1
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(levelname)s: %(message)s'
-    )
+    logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.INFO)
 
     logger.info("Reading configuration file")
     config = Config.from_path(args.config)

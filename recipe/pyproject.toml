@@ -23,11 +23,10 @@ authors = ["Gregory J. Baker <gregory_baker2@hms.harvard.edu>"]
 homepage = "https://github.com/labsyspharm/vae"
 
 [tool.poetry.dependencies]
-zarr = "<=2.14.2"
+zarr = "*"
 hdbscan = "*"
 umap-learn = "*"
 keras = "*"
-lazy-ops = "*"
 natsort = "*"
 pandas = "*"
 pyarrow = "*"
@@ -35,6 +34,8 @@ pyyaml = "*"
 seaborn = "*"
 tensorflow = "*"
 cellcutter = "*"
+opencv-python = "*"
+dask = "*"
 
 [tool.poetry.scripts]
 vae = "vae.scripts.__main__:main"

@@ -1,6 +1,3 @@
-import pyarrow
-import pyarrow.parquet
-import pandas as pd
 from . import components
 
 
@@ -12,12 +9,8 @@ def save_checkpoint(config, module):
 
 
 def run_pipeline(config, start_module_name):
-    if (
-        start_module_name is None
-        or start_module_name == components.pipeline_module_names[0]
-    ):
+    if (start_module_name is None or start_module_name == components.pipeline_module_names[0]):
         start_index = 0
-        data = None
     else:
         start_index = components.pipeline_module_names.index(start_module_name)
         previous_module_name = components.pipeline_module_names[start_index - 1]
@@ -25,9 +18,7 @@ def run_pipeline(config, start_module_name):
             config.checkpoint_path / f"{previous_module_name}.txt"
         )
         if not checkpoint_file_path.exists():
-            raise Exception(
-                f"Checkpoint file for module {previous_module_name} not found"
-            )
+            raise Exception(f"Checkpoint file for module {previous_module_name} not found")
 
     for module in components.pipeline_modules[start_index:]:
         module(config)

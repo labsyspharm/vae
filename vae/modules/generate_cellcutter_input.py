@@ -1,12 +1,15 @@
+import os
 import logging
 
-import os
 import pandas as pd
 
 from ..utils import log_banner, log_multiline
 
+logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 # log_multiline(logger.info, pd.DataFrame().to_string(index=False))
+# log_banner(logger.info, 'Boolean classifications')
 
 
 def GENERATE_CELLCUTTER_INPUT(config):
@@ -16,50 +19,48 @@ def GENERATE_CELLCUTTER_INPUT(config):
         os.makedirs(save_dir)
 
         extension = os.path.splitext(config.csv_path)[1]
-        ext = extension.split('.')[1]
-        if ext == 'parquet':
+        if extension == '.parquet':
             csv = pd.read_parquet(config.csv_path)
-        elif ext == 'csv':
+        elif extension == '.csv':
             csv = pd.read_csv(config.csv_path)
         else:
-            raise ValueError(
-                f'Note: extension type {extension} not yet supported.'
-                )
+            raise ValueError(f'Note: extension type {extension} not supported.')
 
-        # drop cells without a consensus cluster (i.e. noisy cells)
-        # specific to HDBSCAN clustered data for now
-        csv = csv[csv['cluster'] != -1]
+        # drop noisy cells from HDBSCAN clustering
+        csv = csv[csv['cluster_2d'] != -1]
 
         #######################################################################
 
         # calculate weighted random sample by cluster size (class balance)
-        groups = csv.groupby('cluster')
-        sample_weights = pd.DataFrame(
-            {'weights': 1 / (groups.size() * len(groups))}
-            )
+        groups = csv.groupby('cluster_2d')
+        sample_weights = pd.DataFrame({'weights': 1 / (groups.size() * len(groups))})
         weights = pd.merge(
-            csv[['cluster']], sample_weights,
-            left_on='cluster', right_index=True
-            )
+            csv[['cluster_2d']], sample_weights, left_on='cluster_2d', right_index=True
+        )
 
         csv = csv.sample(
-            frac=config.percent_cells, replace=False,
-            weights=weights['weights'], random_state=0, axis=0
-            )
+            frac=config.percent_cells, replace=False, weights=weights['weights'],
+            random_state=0, axis=0
+        )
+        
         print()
         print('Cells per cluster after cluster-weighted random sampling:')
-        print(csv.groupby('cluster').size().sort_values(ascending=False))
+        print(csv.groupby('cluster_2d').size().sort_values(ascending=False))
 
         #######################################################################
 
         # shuffle csv data
         csv = csv.sample(frac=1.0, random_state=0)
 
-        # reserve 10% of data for testing and 10% for validation
+        # reserve 10% of data for testing after model training 
         split = round(len(csv) * 0.10)
         test = csv[0:split]
-        validate = csv[split:split*2]
-        train = csv[split*2:]
+        
+        # reserve 10% of data for validation at the end of each training epoch
+        validate = csv[split:split * 2]
+        
+        # use remaining data for model training
+        train = csv[split * 2:]
 
         # reset row indexes of each dataframe
         test.reset_index(drop=True, inplace=True)

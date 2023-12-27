@@ -1,63 +1,54 @@
-import logging
-
 import os
 import sys
-from datetime import datetime
 import yaml
 import pickle
+import logging
 
-import pandas as pd
 import numpy as np
-import math
+import pandas as pd
 
-from itertools import product
+import math
+from datetime import datetime
+
 from natsort import natsorted
+from itertools import product
 
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
-from matplotlib.offsetbox import OffsetImage, AnnotationBbox
-from matplotlib.widgets import LassoSelector
-from matplotlib.path import Path
-from matplotlib.colors import ListedColormap
+
 from matplotlib import colors
+from matplotlib.path import Path
 from matplotlib.colors import to_rgb
 import matplotlib.gridspec as gridspec
+from matplotlib.colors import ListedColormap
+from matplotlib.widgets import LassoSelector
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 
 from skimage.color import gray2rgb
 
-from lazy_ops import DatasetView
 import zarr
 
 from keras.models import load_model
 
-from sklearn.manifold import TSNE
-from umap import UMAP
 import hdbscan
+from umap import UMAP
+from sklearn.manifold import TSNE
+
 from joblib import Memory
 
-from ..utils import log_banner, log_multiline
+from ..utils import (
+    log_banner, log_multiline, log_transform, clip_outlier_pixels, 
+    compute_vignette_mask, transposeZarr
+)
 
+logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 # log_multiline(logger.info, pd.DataFrame().to_string(index=False))
+# log_banner(logger.info, 'Boolean classifications')
 
 
-def transposeZarr(z):
-    """Re-organizes thumbnail dimensions as expected VAE input
-       (i.e. cells, x, y, channels)."""
-    view = DatasetView(z)
-    result = view.lazy_transpose([1, 2, 3, 0])
-
-    return result
-
-
-def EncodeImgs(X, encoder):
-
-    X_encoded = encoder.predict(X)
-
-    return X_encoded
-
-
-def reverse_log(cutoffs, channel_slice, channel_name, contrast_limits):
+def reverse_processing(cutoffs, channel_slice, channel_name, contrast_limits):
     """Reverses percentile normalization and log10-transformation,
        pixel outliers remained clipped)."""
 
@@ -65,22 +56,22 @@ def reverse_log(cutoffs, channel_slice, channel_name, contrast_limits):
 
     # reverse percentile normalization
     channel_slice = (
-        (((upper_cutoff_log-lower_cutoff_log)*(channel_slice-0)) /
-         (1-0)
-         ) + lower_cutoff_log)
+        (((upper_cutoff_log - lower_cutoff_log) * (channel_slice - 0)) /
+         (1 - 0)) + lower_cutoff_log
+    )
 
     # reverse log10-transform
     channel_slice = np.rint(10 ** channel_slice)
 
-    # Normalize linear pixel values between lower and upper percentile bounds
+    # Normalize pixel values between lower and upper percentile bounds
     # lower = np.rint(10**lower_cutoff_log)
     # upper = np.rint(10**upper_cutoff_log)
     # channel_slice = (channel_slice-lower) / (upper-lower)
 
-    # Normalize linear pixel values between lower and upper contrast settings
+    # Normalize pixel values between lower and upper contrast settings
     lower = contrast_limits[channel_name][0]
     upper = contrast_limits[channel_name][1]
-    channel_slice = (channel_slice-lower) / (upper-lower)
+    channel_slice = (channel_slice - lower) / (upper - lower)
 
     return channel_slice
 
@@ -88,8 +79,7 @@ def reverse_log(cutoffs, channel_slice, channel_name, contrast_limits):
 def DecodeVectors(decoder, cutoffs, contrast_limits, X_encoded, X_seg, orig_input_dims, channel_color_dict, intensity_multiplier):
 
     # initialize a numpy array to store reconstructed thumbnails
-    X_decoded = np.empty(
-        shape=(0, orig_input_dims[0], orig_input_dims[1], 3))
+    X_decoded = np.empty(shape=(0, orig_input_dims[0], orig_input_dims[1], 3))
 
     for encode, seg in zip(X_encoded, X_seg):
 
@@ -97,7 +87,7 @@ def DecodeVectors(decoder, cutoffs, contrast_limits, X_encoded, X_seg, orig_inpu
         seg_slice = seg[:, :, 0]
 
         # ensure segmentation outlines are normalized 0-1
-        seg_slice = (seg_slice - np.min(seg_slice))/np.ptp(seg_slice)
+        seg_slice = (seg_slice - np.min(seg_slice)) / np.ptp(seg_slice)
 
         # convert segmentation thumbnail to RGB
         # and add to blank image
@@ -111,17 +101,13 @@ def DecodeVectors(decoder, cutoffs, contrast_limits, X_encoded, X_seg, orig_inpu
             orig_input_dims[0], orig_input_dims[1], orig_input_dims[2])
 
         # initialize image overlay
-        overlay = np.zeros(
-            (reconstructed_img.shape[0],
-             reconstructed_img.shape[1]))
+        overlay = np.zeros((reconstructed_img.shape[0], reconstructed_img.shape[1]))
 
         # add centroid point at the center of the image
         overlay[
-            int(reconstructed_img.shape[0]/2):int(
-                reconstructed_img.shape[0]/2)+1,
-            int(reconstructed_img.shape[1]/2):int(
-                reconstructed_img.shape[1]/2)+1
-            ] = 1
+            int(reconstructed_img.shape[0] / 2):int(reconstructed_img.shape[0] / 2) + 1,
+            int(reconstructed_img.shape[1] / 2):int(reconstructed_img.shape[1] / 2) + 1
+        ] = 1
 
         overlay = gray2rgb(overlay)
 
@@ -129,7 +115,7 @@ def DecodeVectors(decoder, cutoffs, contrast_limits, X_encoded, X_seg, orig_inpu
 
             channel_slice = reconstructed_img[:, :, ch]
 
-            channel_slice = reverse_log(cutoffs, channel_slice, name, contrast_limits)
+            channel_slice = reverse_processing(cutoffs, channel_slice, name, contrast_limits)
 
             channel_slice = gray2rgb(channel_slice)
 
@@ -137,17 +123,15 @@ def DecodeVectors(decoder, cutoffs, contrast_limits, X_encoded, X_seg, orig_inpu
 
             overlay += channel_slice * to_rgb(color)
 
-        overlay += seg_slice
+        overlay += seg_slice.compute()
 
-        overlay = overlay.reshape(
-            (1, orig_input_dims[0], orig_input_dims[1], 3)
-            )
+        overlay = overlay.reshape((1, orig_input_dims[0], orig_input_dims[1], 3))
 
         X_decoded = np.concatenate((X_decoded, overlay), axis=0)
 
     return X_decoded
 
-
+ 
 def ScatterReconstructions(X_decoded, X_encoded_embedded, zoom, ax):
 
     def imscatter(x, y, ax, imageData, zoom):
@@ -176,26 +160,22 @@ def PlotLatentSpace(reconstructions, zoom, X_encoded_embedded, X_decoded, y, cha
     if reconstructions:
 
         ScatterReconstructions(
-            X_decoded=X_decoded, X_encoded_embedded=X_encoded_embedded,
-            zoom=zoom, ax=ax
-            )
+            X_decoded=X_decoded, X_encoded_embedded=X_encoded_embedded, zoom=zoom, ax=ax
+        )
 
         custom_lines = []
         for name, (ch, color) in channel_color_dict.items():
 
-            custom_lines.append(
-                Line2D([0], [0], color=color, lw=6, label=name)
-                )
+            custom_lines.append(Line2D([0], [0], color=color, lw=6, label=name))
 
         ax.scatter(
-            X_encoded_embedded[:, 0],
-            X_encoded_embedded[:, 1],
-            c='k', s=0.0, ec='k', lw=0.25, zorder=4)
+            X_encoded_embedded[:, 0], X_encoded_embedded[:, 1], 
+            c='k', s=0.0, ec='k', lw=0.25, zorder=4
+        )
 
         plt.legend(
-            handles=custom_lines, prop={'size': 11}, labelspacing=0.7,
-            bbox_to_anchor=(1.22, 1.0)
-            )
+            handles=custom_lines, prop={'size': 11}, labelspacing=0.7, bbox_to_anchor=(1.22, 1.0)
+        )
 
         plt.grid(False)
         plt.tight_layout()
@@ -207,12 +187,12 @@ def PlotLatentSpace(reconstructions, zoom, X_encoded_embedded, X_decoded, y, cha
         if isinstance(y, np.ndarray):
             num_labels = len(np.unique(y))
             num_colors = plt.cm.get_cmap('tab20').N
-            palette_multiplier = math.ceil(num_labels/num_colors)
+            palette_multiplier = math.ceil(num_labels / num_colors)
             palette = []
             palette.extend(list(plt.cm.get_cmap('tab20').colors))
             palette = palette * palette_multiplier
             palette.insert(0, (0.0, 0.0, 0.0))
-            trim = len(palette)-num_labels
+            trim = len(palette) - num_labels
             palette = palette[:-trim]
 
             label_color_dict = dict(zip(sorted(np.unique(y)), palette))
@@ -222,77 +202,58 @@ def PlotLatentSpace(reconstructions, zoom, X_encoded_embedded, X_decoded, y, cha
             for lbl, color in label_color_dict.items():
 
                 legend_elements.append(
-                    Line2D([0], [0], marker='o', color='w',
-                           label=lbl, markerfacecolor=color,
+                    Line2D([0], [0], marker='o', color='w', label=lbl, markerfacecolor=color,
                            markeredgecolor='k', lw=0.25, markersize=7)
-                           )
+                )
 
             plt.scatter(
-                X_encoded_embedded[:, 0],
-                X_encoded_embedded[:, 1],
+                X_encoded_embedded[:, 0], X_encoded_embedded[:, 1],
                 c=c, ec='k', lw=0.0, s=scatter_point_size
-                )
+            )
 
             plt.legend(
-                handles=legend_elements, fontsize=9.2, labelspacing=0.005,
+                handles=legend_elements, fontsize=9.2, labelspacing=0.005, 
                 bbox_to_anchor=(1.12, 1.01)
-                )
+            )
         else:
             # consensus HDBSCAN clustering
             # build cmap
             cmap = categorical_cmap(
-                numUniqueSamples=len(y.unique()),
-                numCatagories=10,
-                cmap='tab10',
-                continuous=False
-                )
+                numUniqueSamples=len(y.unique()), numCatagories=10, cmap='tab10', continuous=False
+            )
 
-            label_color_dict = dict(
-                zip(natsorted(y.unique()), [tuple(i) for i in cmap.colors])
-                )
+            label_color_dict = dict(zip(natsorted(y.unique()), [tuple(i) for i in cmap.colors]))
 
             if -1 in y.unique():
                 # make black the first color to specify
                 # cluster outliers (i.e. cluster -1 cells)
                 cmap = ListedColormap(
                     np.insert(
-                        arr=cmap.colors, obj=0,
-                        values=[0.0, 0.0, 0.0], axis=0)
-                        )
+                        arr=cmap.colors, obj=0, values=[0.0, 0.0, 0.0], axis=0)
+                )
 
                 # trim qualitative cmap to number of unique samples
                 cmap = ListedColormap(cmap.colors[:-1])
 
-            hue_dict = dict(
-                zip(
-                    natsorted(y.unique()),
-                    list(range(len(y.unique()))))
-                    )
+            hue_dict = dict(zip(natsorted(y.unique()), list(range(len(y.unique())))))
 
             c = [hue_dict[i] for i in y]
 
             plt.scatter(
-                X_encoded_embedded[:, 0],
-                X_encoded_embedded[:, 1],
-                c=c, cmap=cmap, ec='k',
+                X_encoded_embedded[:, 0], X_encoded_embedded[:, 1], c=c, cmap=cmap, ec='k',
                 lw=0.0, s=scatter_point_size
-                )
+            )
 
             legend_elements = []
-            for e, i in enumerate(
-                natsorted(y.unique())
-              ):
+            for e, i in enumerate(natsorted(y.unique())):
 
                 legend_elements.append(
                     Line2D([0], [0], marker='o', color='w', label=i,
                            markerfacecolor=cmap.colors[e], markeredgecolor='k',
                            lw=0.25, markersize=9)
-                           )
-
-            plt.legend(
-                handles=legend_elements, labelspacing=0.15,
-                bbox_to_anchor=(1.12, 1.0)
                 )
+
+            plt.legend(handles=legend_elements, labelspacing=0.15, bbox_to_anchor=(1.12, 1.0))
 
         plt.grid(False)
         plt.tight_layout()
@@ -330,9 +291,7 @@ def InterpolationGrid(orig_input_dims, grid_size, X_encoded, y, decoder, label_c
 
     # create an empty array that will fit the required number of
     # thumbnails given the chosen grid size
-    y_dim, x_dim, channels = (orig_input_dims[0], orig_input_dims[1],
-                              orig_input_dims[2]
-                              )
+    y_dim, x_dim, channels = (orig_input_dims[0], orig_input_dims[1], orig_input_dims[2])
     figure = np.zeros((y_dim * grid_size, x_dim * grid_size))
 
     # convert to RGB
@@ -355,9 +314,7 @@ def InterpolationGrid(orig_input_dims, grid_size, X_encoded, y, decoder, label_c
             y_dim, x_dim, channels)
 
         # create blank image to append channels to
-        overlay = np.zeros(
-            (reconstructed_img.shape[0],
-             reconstructed_img.shape[1]))
+        overlay = np.zeros((reconstructed_img.shape[0], reconstructed_img.shape[1]))
 
         # convert to RGB
         overlay = gray2rgb(overlay)
@@ -381,9 +338,9 @@ def InterpolationGrid(orig_input_dims, grid_size, X_encoded, y, decoder, label_c
     plt.grid(linestyle='dotted', linewidth=0.0)
     plt.gca().invert_yaxis()
 
-    ax.set_xticks(list(range(x_dim, grid_size * x_dim+1, x_dim)))
+    ax.set_xticks(list(range(x_dim, grid_size * x_dim + 1, x_dim)))
     ax.set_xticklabels(list(np.round(grids[1], 2)), size=8)
-    ax.set_yticks(list(range(y_dim, grid_size * y_dim+1, y_dim)))
+    ax.set_yticks(list(range(y_dim, grid_size * y_dim + 1, y_dim)))
     ax.set_yticklabels(list(np.round(grids[0], 2)), size=8)
 
     y = y.reset_index(drop=True)  # ensure y and X_encoded indices match
@@ -395,19 +352,18 @@ def InterpolationGrid(orig_input_dims, grid_size, X_encoded, y, decoder, label_c
 
     if make_sample_sizes_equal is True:
         lengths_list = []
-        for i in scatter_df['cluster'].unique():
+        for i in scatter_df['cluster_2d'].unique():
 
-            lengths_list.append(len(scatter_df[scatter_df['cluster'] == i]))
+            lengths_list.append(len(scatter_df[scatter_df['cluster_2d'] == i]))
 
         sample_size = min(lengths_list)
 
         sample_dfs = []
-        for j in scatter_df['cluster'].unique():
-            if len(scatter_df[scatter_df['cluster'] == j]) != sample_size:
-                sample_dfs.append(
-                    scatter_df[scatter_df['cluster'] == j].sample(n=sample_size))
+        for j in scatter_df['cluster_2d'].unique():
+            if len(scatter_df[scatter_df['cluster_2d'] == j]) != sample_size:
+                sample_dfs.append(scatter_df[scatter_df['cluster_2d'] == j].sample(n=sample_size))
             else:
-                sample_dfs.append(scatter_df[scatter_df['cluster'] == j])
+                sample_dfs.append(scatter_df[scatter_df['cluster_2d'] == j])
 
         scatter_df = pd.concat(sample_dfs, axis=0)
     else:
@@ -429,33 +385,32 @@ def InterpolationGrid(orig_input_dims, grid_size, X_encoded, y, decoder, label_c
         & (scatter_df[0] < grids[1].max())
         & (scatter_df[1] > grids[0].min())
         & (scatter_df[1] < grids[0].max())
-        ].copy()
+    ].copy()
 
     # map latent space units (percent point function)
     # to the x, y pixel ranges of the sweep grid
     scatter_points[0] = np.interp(
         scatter_points[0],
         (global_x_min, global_x_max),
-        (orig_input_dims[0]/2, (figure.shape[0] - orig_input_dims[0]/2))
-        )
+        (orig_input_dims[0] / 2, (figure.shape[0] - orig_input_dims[0] / 2))
+    )
     scatter_points[1] = np.interp(
         scatter_points[1],
         (global_y_min, global_y_max),
-        (orig_input_dims[0]/2, (figure.shape[0] - orig_input_dims[0]/2))
-        )
+        (orig_input_dims[0] / 2, (figure.shape[0] - orig_input_dims[0] / 2))
+    )
 
     # plot latent vectors for images
-    for i in natsorted(scatter_points['cluster'].unique()):
+    for i in natsorted(scatter_points['cluster_2d'].unique()):
 
         ax.scatter(
-            scatter_points[0][scatter_points['cluster'] == i],
-            scatter_points[1][scatter_points['cluster'] == i],
+            scatter_points[0][scatter_points['cluster_2d'] == i],
+            scatter_points[1][scatter_points['cluster_2d'] == i],
             fc=[
-                label_color_dict[i] for i in scatter_points['cluster'][
-                    scatter_points['cluster'] == i]],
-            marker='o',
-            label=i, s=scatter_point_size,
-            ec='k', lw=0.25, alpha=scatter_point_alpha)
+                label_color_dict[i] for i in scatter_points['cluster_2d'][
+                    scatter_points['cluster_2d'] == i]],
+            marker='o', label=i, s=scatter_point_size, ec='k', lw=0.25, alpha=scatter_point_alpha
+        )
 
     # channel legend
     legend_elements = []
@@ -466,7 +421,7 @@ def InterpolationGrid(orig_input_dims, grid_size, X_encoded, y, decoder, label_c
     leg = plt.legend(
         handles=legend_elements, loc='upper left', prop={'size': 11},
         markerscale=1, labelspacing=0.7, bbox_to_anchor=(1, 0.32)
-        )
+    )
     ax.add_artist(leg)
 
     # cluster legend
@@ -476,17 +431,10 @@ def InterpolationGrid(orig_input_dims, grid_size, X_encoded, y, decoder, label_c
 
     plt.xticks(rotation=90)
 
-    plt.xlabel(
-        'latent dimension 1', size=13,
-        labelpad=10, fontweight='normal')
-    plt.ylabel(
-        'latent dimension 2', size=13,
-        labelpad=10, fontweight='normal')
+    plt.xlabel('latent dimension 1', size=13, labelpad=10, fontweight='normal')
+    plt.ylabel('latent dimension 2', size=13, labelpad=10, fontweight='normal')
 
-    plt.savefig(
-        os.path.join(save_dir, 'InterpolationGrid.png'),
-        dpi=800, bbox_inches='tight'
-        )
+    plt.savefig(os.path.join(save_dir, 'InterpolationGrid.png'), dpi=800, bbox_inches='tight')
     plt.close('all')
 
     return global_x_min, global_x_max, global_y_min, global_y_max, scatter_df
@@ -549,21 +497,17 @@ class SelectFromCollection(object):
         self.canvas.draw_idle()
 
 
-def LassoVectors(decoder, clustering_labels, cutoffs, contrast_limits, orig_input_dims, imgs_instead_of_points, zoom, X, X_seg, X_encoded, X_encoded_embedded, X_decoded, y, numColumns, intensity_multiplier, max_examples, label_color_dict, channel_color_dict, thumbnail_font_size, save_dir):
-
-    lasso_dict = {}
+def LassoVectors(decoder, clustering_labels, cutoffs, contrast_limits, orig_input_dims, imgs_instead_of_points, zoom, X, X_seg, X_encoded, X_encoded_embedded, X_decoded, y, numColumns, intensity_multiplier, max_examples, label_color_dict, channel_color_dict, thumbnail_font_size, save_dir, mask, undo_mask):
 
     data = pd.DataFrame(X_encoded_embedded, columns=['x', 'y'])
 
     if all(y == clustering_labels):
         y_df = pd.DataFrame(clustering_labels)
-        y_df.rename(columns={0: 'cluster'}, inplace=True)
+        y_df.rename(columns={0: 'cluster_2d'}, inplace=True)
     else:
         y_df = y
 
-    data = pd.merge(
-        y_df.reset_index(drop=True), data, left_index=True, right_index=True
-        )
+    data = pd.merge(y_df.reset_index(drop=True), data, left_index=True, right_index=True)
 
     input_imgs = X[data.index]
 
@@ -571,7 +515,7 @@ def LassoVectors(decoder, clustering_labels, cutoffs, contrast_limits, orig_inpu
         xlim=(data['x'].min(), data['x'].max()),
         ylim=(data['y'].min(), data['y'].max()),
         autoscale_on=False
-        )
+    )
 
     fig, lasso_ax = plt.subplots(subplot_kw=subplot_kw, figsize=(9, 8))
 
@@ -581,37 +525,32 @@ def LassoVectors(decoder, clustering_labels, cutoffs, contrast_limits, orig_inpu
         X_encoded_embedded = X_encoded_embedded[data.index]
 
         ScatterReconstructions(
-            X_decoded=X_decoded, X_encoded_embedded=X_encoded_embedded,
-            zoom=zoom, ax=lasso_ax
-            )
+            X_decoded=X_decoded, X_encoded_embedded=X_encoded_embedded, zoom=zoom, ax=lasso_ax
+        )
 
         legend_elements = []
         for name, (ch, color) in channel_color_dict.items():
 
-            legend_elements.append(
-                Line2D([0], [0], color=color, lw=5, label=name)
-                )
+            legend_elements.append(Line2D([0], [0], color=color, lw=5, label=name))
 
-        pts = lasso_ax.scatter(
-            data['x'], data['y'], c='k', s=0.0, ec='k', lw=0.25, zorder=4
-            )
+        pts = lasso_ax.scatter(data['x'], data['y'], c='k', s=0.0, ec='k', lw=0.25, zorder=4)
 
         plt.legend(
             handles=legend_elements, markerscale=1, labelspacing=0.7,
             prop={'size': 11}, bbox_to_anchor=(1.02, 0.99)
-            )
+        )
 
     else:
         if all(y == clustering_labels):
 
             num_labels = len(np.unique(y))
             num_colors = plt.cm.get_cmap('tab20').N
-            palette_multiplier = math.ceil(num_labels/num_colors)
+            palette_multiplier = math.ceil(num_labels / num_colors)
             palette = []
             palette.extend(list(plt.cm.get_cmap('tab20').colors))
             palette = palette * palette_multiplier
             palette.insert(0, (0.0, 0.0, 0.0))
-            trim = len(palette)-num_labels
+            trim = len(palette) - num_labels
             palette = palette[:-trim]
 
             label_color_dict = dict(zip(sorted(np.unique(y)), palette))
@@ -624,10 +563,10 @@ def LassoVectors(decoder, clustering_labels, cutoffs, contrast_limits, orig_inpu
                     Line2D([0], [0], marker='o', color='w',
                            label=i, markerfacecolor=markerfacecolor,
                            markeredgecolor='k', lw=0.25, markersize=15)
-                    )
+                )
         else:
 
-            c = [label_color_dict[i] for i in data['cluster']]
+            c = [label_color_dict[i] for i in data['cluster_2d']]
 
             legend_elements = []
             for name, color in label_color_dict.items():
@@ -635,11 +574,9 @@ def LassoVectors(decoder, clustering_labels, cutoffs, contrast_limits, orig_inpu
                     Line2D([0], [0], marker='o', color='w',
                            label=name, markerfacecolor=color,
                            markeredgecolor='k', lw=0.25, markersize=15)
-                    )
+                )
 
-        pts = lasso_ax.scatter(
-            data['x'], data['y'], c=c, s=30.0, ec='k', lw=0.25, zorder=4
-            )
+        pts = lasso_ax.scatter(data['x'], data['y'], c=c, s=30.0, ec='k', lw=0.25, zorder=4)
 
         lasso_ax.update_datalim(np.column_stack([data['x'], data['y']]))
         lasso_ax.autoscale()
@@ -647,7 +584,7 @@ def LassoVectors(decoder, clustering_labels, cutoffs, contrast_limits, orig_inpu
         plt.legend(
             handles=legend_elements, markerscale=1, labelspacing=0.7,
             prop={'size': 11}, bbox_to_anchor=(1.02, 0.99)
-            )
+        )
 
     selector = SelectFromCollection(lasso_ax, pts)
 
@@ -679,12 +616,13 @@ def LassoVectors(decoder, clustering_labels, cutoffs, contrast_limits, orig_inpu
         selected_vectors = selected_vectors.sample(
             n=max_examples, random_state=44)
 
-    selected_vectors.sort_values(by='cluster', inplace=True)
-    X_seg = X_seg[selected_vectors.index]
+    selected_vectors.sort_values(by='cluster_2d', inplace=True)
+    # selected_vectors.sort_index(inplace=True)  # sort by row index for efficient indexing
+    X_seg = X_seg[selected_vectors.index] 
 
     # check cell images
     numSamples = len(selected_vectors)
-    numRows = math.ceil(numSamples/numColumns)
+    numRows = math.ceil(numSamples / numColumns)
     grid_dims = (numRows, numColumns)
 
     fig = plt.figure()
@@ -704,9 +642,7 @@ def LassoVectors(decoder, clustering_labels, cutoffs, contrast_limits, orig_inpu
             grid_dims[0], grid_dims[1],
             subplot_spec=outer[panel], wspace=0.1, hspace=0.0)
 
-        for e, (row, seg) in enumerate(
-          zip(selected_vectors.iterrows(), X_seg)
-          ):
+        for e, (row, seg) in enumerate(zip(selected_vectors.iterrows(), X_seg)):
 
             ax = plt.Subplot(fig, inner[e])
             ax.set_xticks([])
@@ -722,7 +658,7 @@ def LassoVectors(decoder, clustering_labels, cutoffs, contrast_limits, orig_inpu
             seg_slice = seg[:, :, 0]
 
             # ensure segmentation outlines are normalized 0-1
-            seg_slice = (seg_slice - np.min(seg_slice))/np.ptp(seg_slice)
+            seg_slice = (seg_slice - np.min(seg_slice)) / np.ptp(seg_slice)
 
             # convert segmentation thumbnail to RGB
             # and add to blank image
@@ -732,17 +668,20 @@ def LassoVectors(decoder, clustering_labels, cutoffs, contrast_limits, orig_inpu
 
                 input_img = row[1]['input_img'].reshape(
                     orig_input_dims[0], orig_input_dims[1], orig_input_dims[2]
-                    )
+                )
 
-                overlay = np.zeros(
-                    (input_img.shape[0],
-                     input_img.shape[1]))
+                if undo_mask:  # undo vignette mask
+                    # mask function is designed to be applied to all cells in a batch during model
+                    # training. Slicing first dimension in this case to apply to a single patch.
+                    input_img /= mask[0, :, :, :]  
+                
+                overlay = np.zeros((input_img.shape[0], input_img.shape[1]))
 
                 # add centroid point at the center of the image
                 overlay[
-                    int(input_img.shape[0]/2):int(input_img.shape[0]/2)+1,
-                    int(input_img.shape[1]/2):int(input_img.shape[1]/2)+1
-                    ] = 1
+                    int(input_img.shape[0] / 2):int(input_img.shape[0] / 2) + 1,
+                    int(input_img.shape[1] / 2):int(input_img.shape[1] / 2) + 1
+                ] = 1
 
                 overlay = gray2rgb(overlay)
 
@@ -750,15 +689,17 @@ def LassoVectors(decoder, clustering_labels, cutoffs, contrast_limits, orig_inpu
 
                     channel_slice = input_img[:, :, ch]
 
-                    channel_slice = reverse_log(cutoffs, channel_slice, name, contrast_limits)
+                    channel_slice = reverse_processing(
+                        cutoffs, channel_slice, name, contrast_limits
+                    )
 
                     channel_slice = gray2rgb(channel_slice)
 
                     channel_slice = channel_slice * intensity_multiplier
 
-                    overlay += channel_slice * to_rgb(color)
+                    overlay += channel_slice.compute() * to_rgb(color)
 
-                overlay += seg_slice
+                overlay += seg_slice.compute()
 
             elif panel == 1:
 
@@ -769,18 +710,15 @@ def LassoVectors(decoder, clustering_labels, cutoffs, contrast_limits, orig_inpu
                 reconstructed_img = X_decoded.reshape(
                     orig_input_dims[0], orig_input_dims[1], orig_input_dims[2])
 
-                overlay = np.zeros(
-                    (reconstructed_img.shape[0],
-                     reconstructed_img.shape[1])
-                     )
+                overlay = np.zeros((reconstructed_img.shape[0], reconstructed_img.shape[1]))
 
                 # add centroid point at the center of the image
                 overlay[
-                    int(reconstructed_img.shape[0]/2):int(
-                        reconstructed_img.shape[0]/2)+1,
-                    int(reconstructed_img.shape[1]/2):int(
-                        reconstructed_img.shape[1]/2)+1
-                    ] = 1
+                    int(reconstructed_img.shape[0] / 2):int(
+                        reconstructed_img.shape[0] / 2) + 1,
+                    int(reconstructed_img.shape[1] / 2):int(
+                        reconstructed_img.shape[1] / 2) + 1
+                ] = 1
 
                 overlay = gray2rgb(overlay)
 
@@ -788,7 +726,9 @@ def LassoVectors(decoder, clustering_labels, cutoffs, contrast_limits, orig_inpu
 
                     channel_slice = reconstructed_img[:, :, ch]
 
-                    channel_slice = reverse_log(cutoffs, channel_slice, name, contrast_limits)
+                    channel_slice = reverse_processing(
+                        cutoffs, channel_slice, name, contrast_limits
+                    )
 
                     channel_slice = gray2rgb(channel_slice)
 
@@ -796,41 +736,30 @@ def LassoVectors(decoder, clustering_labels, cutoffs, contrast_limits, orig_inpu
 
                     overlay += channel_slice * to_rgb(color)
 
-                overlay += seg_slice
+                overlay += seg_slice.compute()
 
             ax.imshow(overlay, cmap=plt.cm.binary)
 
-            ax.set_xlabel(
-                row[1]['cluster'], fontsize=thumbnail_font_size, labelpad=0.75
-                )
+            ax.set_xlabel(row[1]['cluster_2d'], fontsize=thumbnail_font_size, labelpad=0.75)
             fig.add_subplot(ax)
 
-    fig.subplots_adjust(
-        bottom=0.01, top=0.94,
-        left=0.01, right=0.85,
-        wspace=0.2, hspace=0.1
-        )
+    fig.subplots_adjust(bottom=0.01, top=0.94, left=0.01, right=0.85, wspace=0.2, hspace=0.1)
 
     legend_elements = []
     for name, (ch, color) in channel_color_dict.items():
-        legend_elements.append(
-            Line2D([0], [0], color=color, lw=3, label=name)
-            )
+        legend_elements.append(Line2D([0], [0], color=color, lw=3, label=name))
 
     fig.legend(
         handles=legend_elements, prop={'size': 5}, bbox_to_anchor=(0.98, 0.95))
 
-    plt.savefig(
-        os.path.join(save_dir, 'lassoed_cells.png'),
-        dpi=800, bbox_inches='tight'
-        )
+    plt.savefig(os.path.join(save_dir, 'lassoed_cells.png'), dpi=800, bbox_inches='tight')
     plt.close('all')
 
 
-def PlotReconstructedImages(orig_input_dims, cutoffs, contrast_limits, decoder, X, X_seg, X_encoded, y, numColumns, label_color_dict, channel_color_dict, intensity_multiplier, thumbnail_font_size, filename, save_dir):
+def PlotReconstructedImages(orig_input_dims, cutoffs, contrast_limits, decoder, X, X_seg, X_encoded, y, numColumns, label_color_dict, channel_color_dict, intensity_multiplier, thumbnail_font_size, filename, save_dir, mask, undo_mask):
 
     numSamples = len(X)
-    numRows = math.ceil(numSamples/numColumns)
+    numRows = math.ceil(numSamples / numColumns)
     grid_dims = (numRows, numColumns)
 
     fig = plt.figure()
@@ -841,9 +770,7 @@ def PlotReconstructedImages(orig_input_dims, cutoffs, contrast_limits, decoder, 
     outer_grid_rows = 1
     outer_grid_cols = 2
 
-    outer = gridspec.GridSpec(
-        outer_grid_rows, outer_grid_cols, wspace=0.1, hspace=0.0
-        )
+    outer = gridspec.GridSpec(outer_grid_rows, outer_grid_cols, wspace=0.1, hspace=0.0)
 
     for panel in range(outer_grid_rows * outer_grid_cols):
 
@@ -851,9 +778,7 @@ def PlotReconstructedImages(orig_input_dims, cutoffs, contrast_limits, decoder, 
             grid_dims[0], grid_dims[1],
             subplot_spec=outer[panel], wspace=0.1, hspace=0.0)
 
-        for e, (trans, encode, label, seg) in enumerate(
-          zip(X, X_encoded, y.items(), X_seg)
-          ):
+        for e, (trans, encode, label, seg) in enumerate(zip(X, X_encoded, y.items(), X_seg)):
 
             ax = plt.Subplot(fig, inner[e])
             ax.set_xticks([])
@@ -869,21 +794,26 @@ def PlotReconstructedImages(orig_input_dims, cutoffs, contrast_limits, decoder, 
             seg_slice = seg[:, :, 0]
 
             # ensure segmentation outlines are normalized 0-1
-            seg_slice = (seg_slice - np.min(seg_slice))/np.ptp(seg_slice)
+            seg_slice = (seg_slice - np.min(seg_slice)) / np.ptp(seg_slice)
 
             # convert segmentation thumbnail to RGB
             # and add to blank image
             seg_slice = gray2rgb(seg_slice) * 0.25  # decrease alpha
 
             if panel == 0:
-
+                
+                if undo_mask:  # undo vignette mask
+                    # mask function is designed to be applied to all cells in a batch during model
+                    # training. Slicing first dimension in this case to apply to a single patch.
+                    trans /= mask[0, :, :, :]
+                
                 overlay = np.zeros((trans.shape[0], trans.shape[1]))
 
                 # add centroid point at the center of the image
                 overlay[
-                    int(trans.shape[0]/2):int(trans.shape[0]/2)+1,
-                    int(trans.shape[1]/2):int(trans.shape[1]/2)+1
-                    ] = 1
+                    int(trans.shape[0] / 2):int(trans.shape[0] / 2) + 1,
+                    int(trans.shape[1] / 2):int(trans.shape[1] / 2) + 1
+                ] = 1
 
                 overlay = gray2rgb(overlay)
 
@@ -891,15 +821,17 @@ def PlotReconstructedImages(orig_input_dims, cutoffs, contrast_limits, decoder, 
 
                     channel_slice = trans[:, :, ch]
 
-                    channel_slice = reverse_log(cutoffs, channel_slice, name, contrast_limits)
+                    channel_slice = reverse_processing(
+                        cutoffs, channel_slice, name, contrast_limits
+                    )
 
                     channel_slice = gray2rgb(channel_slice)
 
                     channel_slice = channel_slice * intensity_multiplier
 
-                    overlay += channel_slice * to_rgb(color)
+                    overlay += channel_slice.compute() * to_rgb(color)
 
-                overlay += seg_slice
+                overlay += seg_slice.compute()
 
             elif panel == 1:
 
@@ -910,18 +842,15 @@ def PlotReconstructedImages(orig_input_dims, cutoffs, contrast_limits, decoder, 
                 reconstructed_img = x_decoded.reshape(
                     orig_input_dims[0], orig_input_dims[1], orig_input_dims[2])
 
-                overlay = np.zeros(
-                    (reconstructed_img.shape[0],
-                     reconstructed_img.shape[1])
-                     )
+                overlay = np.zeros((reconstructed_img.shape[0], reconstructed_img.shape[1]))
 
                 # add centroid point at the center of the image
                 overlay[
-                    int(reconstructed_img.shape[0]/2):int(
-                        reconstructed_img.shape[0]/2)+1,
-                    int(reconstructed_img.shape[1]/2):int(
-                        reconstructed_img.shape[1]/2)+1
-                    ] = 1
+                    int(reconstructed_img.shape[0] / 2):int(
+                        reconstructed_img.shape[0] / 2) + 1,
+                    int(reconstructed_img.shape[1] / 2):int(
+                        reconstructed_img.shape[1] / 2) + 1
+                ] = 1
 
                 overlay = gray2rgb(overlay)
 
@@ -929,7 +858,9 @@ def PlotReconstructedImages(orig_input_dims, cutoffs, contrast_limits, decoder, 
 
                     channel_slice = reconstructed_img[:, :, ch]
 
-                    channel_slice = reverse_log(cutoffs, channel_slice, name, contrast_limits)
+                    channel_slice = reverse_processing(
+                        cutoffs, channel_slice, name, contrast_limits
+                    )
 
                     channel_slice = gray2rgb(channel_slice)
 
@@ -937,33 +868,23 @@ def PlotReconstructedImages(orig_input_dims, cutoffs, contrast_limits, decoder, 
 
                     overlay += channel_slice * to_rgb(color)
 
-                overlay += seg_slice
+                overlay += seg_slice.compute()
 
             ax.imshow(overlay, cmap=plt.cm.binary)
 
-            ax.set_xlabel(
-                label[1], fontsize=thumbnail_font_size, labelpad=0.75
-                )
+            ax.set_xlabel(label[1], fontsize=thumbnail_font_size, labelpad=0.75)
             fig.add_subplot(ax)
 
-    fig.subplots_adjust(
-        bottom=0.01, top=0.94,
-        left=0.01, right=0.85,
-        wspace=0.2, hspace=0.1
-        )
+    fig.subplots_adjust(bottom=0.01, top=0.94, left=0.01, right=0.85, wspace=0.2, hspace=0.1)
 
     legend_elements = []
     for name, (ch, color) in channel_color_dict.items():
-        legend_elements.append(
-            Line2D([0], [0], color=color, lw=3, label=name)
-            )
+        legend_elements.append(Line2D([0], [0], color=color, lw=3, label=name))
 
     fig.legend(
         handles=legend_elements, prop={'size': 5}, bbox_to_anchor=(0.98, 0.95))
 
-    plt.savefig(
-        os.path.join(save_dir, f'{filename}.png'), dpi=800, bbox_inches='tight'
-        )
+    plt.savefig(os.path.join(save_dir, f'{filename}.png'), dpi=800, bbox_inches='tight')
     plt.close('all')
 
 
@@ -980,7 +901,7 @@ def mse(orig_input_dims, decoder, X, X_seg, X_encoded, y, mse_percentile_cutoff,
         reconstructed_img = x_decoded.reshape(
             orig_input_dims[0], orig_input_dims[1], orig_input_dims[2])
 
-        err = np.sum((input_img - reconstructed_img) ** 2)
+        err = np.sum((input_img.compute() - reconstructed_img) ** 2)
         err /= float(input_img.shape[0] * input_img.shape[1])
 
         errors.append(err)
@@ -993,9 +914,8 @@ def mse(orig_input_dims, decoder, X, X_seg, X_encoded, y, mse_percentile_cutoff,
     plt.savefig(os.path.join(save_dir, f'{filename}.png'), dpi=800)
 
     outlier_idxs = [
-        i for i, v in enumerate(errors)
-        if v > np.percentile(errors, mse_percentile_cutoff)]
-
+        i for i, v in enumerate(errors) if v > np.percentile(errors, mse_percentile_cutoff)
+    ]
     X_outliers = X[outlier_idxs]
     X_outliers_seg = X_seg[outlier_idxs]
     X_encoded_outliers = X_encoded[outlier_idxs]
@@ -1020,11 +940,11 @@ def categorical_cmap(numUniqueSamples, numCatagories, cmap='tab10', continuous=F
         cd = {
             'B': 0, 'O': 1, 'G': 2, 'R': 3, 'Pu': 4,
             'Br': 5, 'Pi': 6, 'Gr': 7, 'Y': 8, 'Cy': 9,
-            }
+        }
         myorder = [
             cd['B'], cd['O'], cd['G'], cd['Pu'], cd['Y'],
             cd['R'], cd['Cy'], cd['Br'], cd['Gr'], cd['Pi']
-            ]
+        ]
         ccolors = [ccolors[i] for i in myorder]
 
         # use Okabe and Ito color-safe palette for first 6 colors
@@ -1057,24 +977,15 @@ def categorical_cmap(numUniqueSamples, numCatagories, cmap='tab10', continuous=F
 
 
 def ENCODE_IMAGES(config):
-    
-    training_thumb_dims = (
-        config.window_size, config.window_size, len(config.tif_channels)
-        )
+
+    training_thumb_dims = (config.window_size, config.window_size, len(config.tif_channels))
 
     with open(
-      os.path.join(
-        config.output_path, '4_feature_preprocessing_selections/cutoffs.pkl'),
-      'rb') as handle:
+        os.path.join(config.output_path, '4_feature_preprocessing_selections/cutoffs.pkl'),
+         'rb') as handle:
         cutoffs = pickle.load(handle)
 
-    channel_dict = dict(
-        zip(config.tif_channels, range(len(config.tif_channels)))
-        )
-
-    save_dir = os.path.join(
-        config.output_path, f'6_latent_space_LD{config.latent_dimension}'
-        )
+    save_dir = os.path.join(config.output_path, f'6_latent_space_LD{config.latent_dimension}')
     if not os.path.exists(save_dir):
         os.mkdir(save_dir)
 
@@ -1082,98 +993,16 @@ def ENCODE_IMAGES(config):
 
     # load previously saved encoder and decoders
     try:
-        encoder = load_model(
-            os.path.join(config.output_path, '5_train_vae/encoder.hdf5')
-            )
+        encoder = load_model(os.path.join(config.output_path, '5_train_vae/encoder.hdf5'))
     except OSError:
         print('Encoder not found.')
         sys.exit()
 
     try:
-        decoder = load_model(
-            os.path.join(config.output_path, '5_train_vae/decoder.hdf5')
-            )
+        decoder = load_model(os.path.join(config.output_path, '5_train_vae/decoder.hdf5'))
     except OSError:
         print('Decoder not found.')
         sys.exit()
-
-    ###########################################################################
-    # read training labels
-    y_train = pd.read_csv(
-        os.path.join(config.output_path, '1_cellcutter_input/train.csv')
-        )
-
-    # read training thumbnails (16-bit unsigned integer format)
-    z1_train_path = os.path.join(
-        config.output_path,
-        f'2_cellcutter_output_win{config.window_size}/train_thumbnails_{config.window_size}.zarr'
-        )
-    store = zarr.ZipStore(z1_train_path, mode='r')
-    X_train = zarr.open(store=store)
-
-    # read segmentation thumbnails for training data (16-bit unsigned integer)
-    z1_train_path_seg = os.path.join(
-        config.output_path,
-        f'2_cellcutter_output_win{config.window_size}/train_thumbnails_{config.window_size}_seg.zarr'
-        )
-    store = zarr.ZipStore(z1_train_path_seg, mode='r')
-    X_train_seg = zarr.open(store=store)
-
-    # read validation labels
-    y_validate = pd.read_csv(
-        os.path.join(config.output_path, '1_cellcutter_input/validate.csv')
-        )
-
-    # read validation thumbnails (16-bit unsigned integer format)
-    z1_validate_path = os.path.join(
-        config.output_path,
-        f'2_cellcutter_output_win{config.window_size}/validate_thumbnails_{config.window_size}.zarr'
-        )
-    store = zarr.ZipStore(z1_validate_path, mode='r')
-    X_validate = zarr.open(store=store)
-
-    # read segmentation thumbnails for validation data (16-bit unsigned int)
-    z1_validate_path_seg = os.path.join(
-        config.output_path,
-        f'2_cellcutter_output_win{config.window_size}/validate_thumbnails_{config.window_size}_seg.zarr'
-        )
-    store = zarr.ZipStore(z1_validate_path_seg, mode='r')
-    X_validate_seg = zarr.open(store=store)
-
-    # read test labels
-    y_test = pd.read_csv(
-        os.path.join(config.output_path, '1_cellcutter_input/test.csv')
-        )
-
-    # read test thumbnails (16-bit unsigned integer format)
-    z1_test_path = os.path.join(
-        config.output_path,
-        f'2_cellcutter_output_win{config.window_size}/test_thumbnails_{config.window_size}.zarr'
-        )
-    store = zarr.ZipStore(z1_test_path, mode='r')
-    X_test = zarr.open(store=store)
-
-    # read segmentation thumbnails for test data (16-bit unsigned integer)
-    z1_test_path_seg = os.path.join(
-        config.output_path,
-        f'2_cellcutter_output_win{config.window_size}/test_thumbnails_{config.window_size}_seg.zarr'
-        )
-    store = zarr.ZipStore(z1_test_path_seg, mode='r')
-    X_test_seg = zarr.open(store=store)
-
-    ###########################################################################
-
-    # take a sample of test thumbnail data for analysis
-
-    # rearrange Zarr dimensions to fit shape of expected VAE input
-    # (i.e. cells, x, y, channels)
-    X_test1 = transposeZarr(z=X_test)
-    X_test1 = X_test1[0:config.clustering_sample_size]
-
-    X_test1_seg = transposeZarr(z=X_test_seg)
-    X_test1_seg = X_test1_seg[0:config.clustering_sample_size]
-
-    y_test1 = y_test[0:config.clustering_sample_size]
 
     ###########################################################################
 
@@ -1184,106 +1013,180 @@ def ENCODE_IMAGES(config):
         os.makedirs(combo_dir)
 
         print('Combined data does not exist, creating...')
+        
+        # read training thumbnails (16-bit unsigned integer format)
+        z1_train_path = os.path.join(
+            config.output_path,
+            f'2_cellcutter_output_win{config.window_size}/'
+            f'train_thumbnails_{config.window_size}.zip'
+        )
+        store = zarr.ZipStore(z1_train_path, mode='r')
+        X_train = zarr.open(store=store)
+
+        # read validation thumbnails (16-bit unsigned integer format)
+        z1_validate_path = os.path.join(
+            config.output_path,
+            f'2_cellcutter_output_win{config.window_size}'
+            f'/validate_thumbnails_{config.window_size}.zip'
+        )
+        store = zarr.ZipStore(z1_validate_path, mode='r')
+        X_validate = zarr.open(store=store)
+
+        # read test thumbnails (16-bit unsigned integer format)
+        z1_test_path = os.path.join(
+            config.output_path,
+            f'2_cellcutter_output_win{config.window_size}'
+            f'/test_thumbnails_{config.window_size}.zip'
+        )
+        store = zarr.ZipStore(z1_test_path, mode='r')
+        X_test = zarr.open(store=store)
 
         # initialize combo zarr to store combined train, validate, test data
         X_combo = zarr.open(
             combo_dir,
             mode='w',
-            shape=(
-                X_train.shape[0], X_train.shape[1],
-                X_train.shape[2], X_train.shape[3]
-                ),
-            chunks=(
-                X_train.chunks[0], X_train.chunks[1],
-                X_train.chunks[2], X_train.chunks[3]
-                ),
-            compressor=X_train.compressor,
-            dtype=X_train.dtype
-            )
+            shape=(X_train.shape[0], X_train.shape[1], X_train.shape[2], X_train.shape[3]),
+            chunks=(X_train.chunks[0], X_train.chunks[1], X_train.chunks[2], X_train.chunks[3]),
+            compressor=X_train.compressor, dtype=X_train.dtype
+        )
+        
         X_combo[:] = X_train
-        # concatenate validation and test data to training data
         X_combo.append(X_validate, axis=1)
         X_combo.append(X_test, axis=1)
-    else:
-        # read combined thumbnails
-        X_combo = zarr.open(combo_dir)
 
     if not os.path.exists(combo_dir_seg):
         os.makedirs(combo_dir_seg)
 
         print('Combined segmentation outlines does not exist, creating...')
 
+        # read segmentation thumbnails for training data (16-bit unsigned integer)
+        z1_train_path_seg = os.path.join(
+            config.output_path,
+            f'2_cellcutter_output_win{config.window_size}'
+            f'/train_thumbnails_{config.window_size}_seg.zip'
+        )
+        store = zarr.ZipStore(z1_train_path_seg, mode='r')
+        X_train_seg = zarr.open(store=store)
+
+        # read segmentation thumbnails for validation data (16-bit unsigned int)
+        z1_validate_path_seg = os.path.join(
+            config.output_path,
+            f'2_cellcutter_output_win{config.window_size}'
+            f'/validate_thumbnails_{config.window_size}_seg.zip'
+        )
+        store = zarr.ZipStore(z1_validate_path_seg, mode='r')
+        X_validate_seg = zarr.open(store=store)
+
+        # read segmentation thumbnails for test data (16-bit unsigned integer)
+        z1_test_path_seg = os.path.join(
+            config.output_path,
+            f'2_cellcutter_output_win{config.window_size}'
+            f'/test_thumbnails_{config.window_size}_seg.zip'
+        )
+        store = zarr.ZipStore(z1_test_path_seg, mode='r')
+        X_test_seg = zarr.open(store=store)
+
         # initialize combo zarr to store combined train, validate, test data
         X_combo_seg = zarr.open(
             combo_dir_seg,
             mode='w',
             shape=(
-                X_train_seg.shape[0], X_train_seg.shape[1],
-                X_train_seg.shape[2], X_train_seg.shape[3]
-                ),
+                X_train_seg.shape[0], X_train_seg.shape[1], X_train_seg.shape[2],
+                X_train_seg.shape[3]
+            ),
             chunks=(
-                X_train_seg.chunks[0], X_train_seg.chunks[1],
-                X_train_seg.chunks[2], X_train_seg.chunks[3]
-                ),
-            compressor=X_train_seg.compressor,
-            dtype=X_train_seg.dtype
-            )
+                X_train_seg.chunks[0], X_train_seg.chunks[1], X_train_seg.chunks[2],
+                X_train_seg.chunks[3]
+            ),
+            compressor=X_train_seg.compressor, dtype=X_train_seg.dtype
+        )
+        
         X_combo_seg[:] = X_train_seg
-        # concatenate validation and test data to training data
         X_combo_seg.append(X_validate_seg, axis=1)
         X_combo_seg.append(X_test_seg, axis=1)
-    else:
-        # read combined thumbnails
-        X_combo_seg = zarr.open(combo_dir_seg)
-
+    
     ###########################################################################
 
     if config.cluster_full_dataset:
         print()
-        print('Aggregating combined training, validation, and test data.')
+        print('Working with combined training, validation, and test data.')
 
-        # rearrange Zarr dimensions to fit shape of expected VAE input
-        # (i.e. cells, x, y, channels)
-        X_test1 = transposeZarr(z=X_combo)
-        X_test1_seg = transposeZarr(z=X_combo_seg)
+        # read combined thumbnails
+        X = zarr.open(combo_dir)
+        X = transposeZarr(z=X)
+        
+        # read combined thumbnails
+        X_seg = zarr.open(combo_dir_seg)
+        X_seg = transposeZarr(z=X_seg)
 
-        # load data into memory
-        X_test1 = X_test1[:]
-        X_test1_seg = X_test1_seg[:]
+        # read training labels
+        y_train = pd.read_csv(os.path.join(config.output_path, '1_cellcutter_input/train.csv'))
+
+        # read validation labels
+        y_validate = pd.read_csv(
+            os.path.join(config.output_path, '1_cellcutter_input/validate.csv')
+        )
+
+        # read test labels
+        y_test = pd.read_csv(os.path.join(config.output_path, '1_cellcutter_input/test.csv'))
 
         # combine labels for train, validate, and test data
-        y_test1 = pd.concat([y_train, y_validate, y_test], axis=0)
+        y = pd.concat([y_train, y_validate, y_test], axis=0)
 
-    y_test1['cluster'].replace(
-        to_replace={47: '4.7', 413: '4.13', 416: '4.16'}, inplace=True
+    else:  # take a sample of test thumbnail data for analysis
+
+        # read test thumbnails (16-bit unsigned integer format)
+        z1_test_path = os.path.join(
+            config.output_path,
+            f'2_cellcutter_output_win{config.window_size}'
+            f'/test_thumbnails_{config.window_size}.zip'
         )
-    y_test1['cluster'] = y_test1['cluster'].astype('str')
+        store = zarr.ZipStore(z1_test_path, mode='r')
+        X_test = zarr.open(store=store)
+        X = transposeZarr(z=X_test)
+        X = X[0:config.clustering_sample_size]
+
+        # read segmentation thumbnails for test data (16-bit unsigned integer)
+        z1_test_path_seg = os.path.join(
+            config.output_path,
+            f'2_cellcutter_output_win{config.window_size}'
+            f'/test_thumbnails_{config.window_size}_seg.zip'
+        )
+        store = zarr.ZipStore(z1_test_path_seg, mode='r')
+        X_test_seg = zarr.open(store=store)
+        X_seg = transposeZarr(z=X_test_seg)
+        X_seg = X_seg[0:config.clustering_sample_size]
+
+        # read test labels
+        y_test = pd.read_csv(os.path.join(config.output_path, '1_cellcutter_input/test.csv'))
+
+        y = y_test[0:config.clustering_sample_size].copy()
+
+    # y['cluster_2d'].replace(to_replace={47: '4.7', 413: '4.13', 416: '4.16'}, inplace=True)
+    # y.loc[:, 'cluster_2d'] = y['cluster_2d'].astype('str')
 
     ###########################################################################
+    mask = compute_vignette_mask(X, kernel_size=40)
 
-    # log10 transform
-    X_test1 = np.log10(X_test1, where=(X_test1 != 0))
+    # preprocess image patches
+    X_transform = clip_outlier_pixels(log_transform(X), cutoffs) * mask
 
-    for i in range(X_test1.shape[0]):
-
-        for e, (lower_cutoff_log, upper_cutoff_log) in enumerate(
-          cutoffs.values()):
-
-            # scale 0.17th and 99.99th percentile between 0 and 1
-            X_test1[i, :, :, e] = (
-                (((1-0)*(X_test1[i, :, :, e]-lower_cutoff_log)) /
-                 (upper_cutoff_log-lower_cutoff_log)
-                 ) + 0)
-
-            # clip lower and upper outliers to 0 and 1, respectively
-            X_test1[i, :, :, e] = np.clip(
-                a=X_test1[i, :, :, e], a_min=0, a_max=1
-                )
-
+    # create a new Zarr to store the processed Dask array image patches
+    # patches_store = zarr.open(
+    #     os.path.join(save_dir, 'processed_zarr'),
+    #     mode='w',
+    #     shape=X_transform.shape,
+    #     chunks=X_transform.chunksize,
+    #     dtype=X_transform.dtype,
+    # )
+    
+    # save the processed Dask array image patches back to the Zarr store
+    # da.store(X_transform, patches_store)
+    
     ###########################################################################
-
     # encode test images
-    X_encoded = EncodeImgs(X=X_test1, encoder=encoder)
+    print('Encoding images...')
+    X_encoded = encoder.predict(X_transform)
 
     ###########################################################################
     # embed latent vectors if they are greater than 2D
@@ -1383,21 +1286,35 @@ def ENCODE_IMAGES(config):
     print(np.unique(clustering.labels_))
 
     ###########################################################################
-
+    # new = pd.read_csv('/Users/greg/Downloads/latent_vectors_ROT_VIG40_4-cells-leiden.csv')
+    
+    # # plot latent vectors colored according to high-dimensional Leiden clustering
+    # label_color_dict = PlotLatentSpace(
+    #     reconstructions=False,
+    #     zoom=None,
+    #     X_encoded_embedded=X_encoded_embedded,
+    #     X_decoded=None,
+    #     y=new['cluster_2d'],
+    #     channel_color_dict=None,
+    #     scatter_point_size=144000 / len(X_encoded_embedded),
+    #     filename='Leiden_clustering',
+    #     save_dir=save_dir
+    # )
+    
     # plot latent vectors colored according to prior clustering
     label_color_dict = PlotLatentSpace(
         reconstructions=False,
         zoom=None,
         X_encoded_embedded=X_encoded_embedded,
         X_decoded=None,
-        y=y_test1['cluster'],
+        y=y['cluster_2d'],
         channel_color_dict=None,
-        scatter_point_size=144000/len(X_encoded_embedded),
+        scatter_point_size=144000 / len(X_encoded_embedded),
         filename='consensus_clustering',
         save_dir=save_dir
-        )
+    )
 
-    # remove noisy cells (cluster -1)
+    # REMOVE UNCLUSTERED CELLS (cluster -1)
     # plot latent vectors colored by HDBSCAN clustering of latent space
     # filter_indices = np.where(clustering.labels_ != -1)[0].tolist()
     # X_encoded_embedded_filt = np.take(X_encoded_embedded, filter_indices, 0)
@@ -1410,32 +1327,32 @@ def ENCODE_IMAGES(config):
         X_decoded=None,
         y=clustering.labels_,
         channel_color_dict=None,
-        scatter_point_size=144000/len(X_encoded_embedded),
+        scatter_point_size=144000 / len(X_encoded_embedded),
         filename='latent_clustering',
         save_dir=save_dir
-        )
+    )
 
     # reconstruct thumbnail images from latent vectors
     X_decoded = DecodeVectors(
         decoder=decoder, cutoffs=cutoffs, contrast_limits=contrast_limits,
-        X_encoded=X_encoded, X_seg=X_test1_seg,
+        X_encoded=X_encoded, X_seg=X_seg,
         orig_input_dims=training_thumb_dims,
         channel_color_dict=config.channel_colors,
         intensity_multiplier=1.1
-        )
+    )
 
-    # plot latent vectors represented as their learned reconstructions
+    # plot latent vectors represented as their learned representations
     PlotLatentSpace(
         reconstructions=True,
         zoom=0.5,
         X_encoded_embedded=X_encoded_embedded,
         X_decoded=X_decoded,
-        y=y_test1['cluster'],
+        y=y['cluster_2d'],
         channel_color_dict=config.channel_colors,
-        scatter_point_size=144000/len(X_encoded_embedded),
+        scatter_point_size=144000 / len(X_encoded_embedded),
         filename='thumbnails',
         save_dir=save_dir
-        )
+    )
 
     # display learned representations of input thumbnail images
     if config.latent_dimension == 2:
@@ -1444,19 +1361,19 @@ def ENCODE_IMAGES(config):
             orig_input_dims=training_thumb_dims,
             grid_size=50,
             X_encoded=X_encoded,
-            y=y_test1['cluster'],
+            y=y['cluster_2d'],
             decoder=decoder,
             label_color_dict=label_color_dict,
             channel_color_dict=config.channel_colors,
             frac_of_scatter_points=1.0,
-            scatter_point_size=144000/len(X_encoded_embedded),
+            scatter_point_size=144000 / len(X_encoded_embedded),
             make_sample_sizes_equal=False,
             img_brightness_multiplier=1.2,
             scatter_point_alpha=1.0,
             save_dir=save_dir
-            )
+        )
 
-    # get input and output images of lassoed latent vectors for targeted analysis of regions 
+    # get input and output images of lassoed latent vectors for targeted analysis of vectors 
     if config.lasso_vector_tool:
         LassoVectors(
             decoder=decoder,
@@ -1466,39 +1383,43 @@ def ENCODE_IMAGES(config):
             orig_input_dims=training_thumb_dims,
             imgs_instead_of_points=True,
             zoom=0.5,
-            X=X_test1,
-            X_seg=X_test1_seg,
+            X=X_transform,
+            X_seg=X_seg,
             X_encoded=X_encoded,
             X_encoded_embedded=X_encoded_embedded,
             X_decoded=X_decoded,
-            y=y_test1['cluster'],
+            y=y['cluster_2d'],
             numColumns=10,
             intensity_multiplier=1.1,
             label_color_dict=label_color_dict,
             channel_color_dict=config.channel_colors,
             max_examples=1000,
             thumbnail_font_size=3.0,
-            save_dir=save_dir
-            )
+            save_dir=save_dir,
+            mask=mask,
+            undo_mask=True
+        )
 
     PlotReconstructedImages(
         orig_input_dims=training_thumb_dims,
         cutoffs=cutoffs,
         contrast_limits=contrast_limits,
         decoder=decoder,
-        X=X_test1[0:100],
-        X_seg=X_test1_seg[0:100],
+        X=X_transform[0:100],
+        X_seg=X_seg[0:100],
         X_encoded=X_encoded[0:100],
-        y=y_test1['cluster'][0:100],
+        y=y['cluster_2d'][0:100],
         numColumns=10,
         label_color_dict=label_color_dict,
         channel_color_dict=config.channel_colors,
         intensity_multiplier=1.1,
         thumbnail_font_size=3.0,
-        filename='learned_reconstructions',
-        save_dir=save_dir
-        )
-
+        filename='learned_representations',
+        save_dir=save_dir,
+        mask=mask,
+        undo_mask=True
+    )
+       
     # compute mean squared error between thumbnail image inputs and outputs
     (average_error,
         errors,
@@ -1509,14 +1430,14 @@ def ENCODE_IMAGES(config):
         outlier_idxs) = mse(
             orig_input_dims=training_thumb_dims,
             decoder=decoder,
-            X=X_test1,
-            X_seg=X_test1_seg,
+            X=X_transform,
+            X_seg=X_seg,
             X_encoded=X_encoded,
-            y=y_test1['cluster'],
+            y=y['cluster_2d'],
             mse_percentile_cutoff=99,
             filename='mse_dist',
             save_dir=save_dir
-            )
+    )
 
     # get input thumbnails associated with poor learned reconstruction
     PlotReconstructedImages(
@@ -1534,5 +1455,7 @@ def ENCODE_IMAGES(config):
         intensity_multiplier=1.0,
         thumbnail_font_size=3.0,
         filename='outliers',
-        save_dir=save_dir
-        )
+        save_dir=save_dir,
+        mask=mask,
+        undo_mask=False
+    )
