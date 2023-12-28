@@ -323,7 +323,7 @@ def build_and_fit_model(X_train, steps_per_epoch, X_valid, validation_steps, img
     model_checkpoint = ModelCheckpoint(
         filepath=os.path.join(checkpoint_path, 'val_loss-{val_loss:.5f}-cp.ckpt'),
         monitor='val_loss', verbose=1, save_best_only=True, save_weights_only=True,
-        initial_value_threshold=0.00118
+        initial_value_threshold=None
     )
 
     tensorboard_log_dir = os.path.join(save_dir, 'tensorboard_logs/fit')
