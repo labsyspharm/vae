@@ -1,6 +1,7 @@
+![](logo.png)
+
+## Cellular Entity Latent Analyzer.
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-# Variational Autoencoder (VAE)
-
-Source code for generating thumbnail images of cells from a multi-channel TIFF
-image, training a VAE model, and performing clustering on latent space vectors.
+CELA is a Python-based software package for contextually-aware cell state inference in whole-slide multiplex images of tissue using the variational autoencoder deep learning network architecture.
