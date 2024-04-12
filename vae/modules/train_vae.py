@@ -58,81 +58,82 @@ def chunks(lst, thumbs_per_batch):
 
 
 def augment_and_shuffle_data(X_train, shuffled_batch_dir, concatenated_batch_dir):
-
-    # if not os.path.exists(concatenated_batch_dir):
-        
-    print()
     
-    # shuffle thumbnails in batches and save as new zarr arrays to avoid memory overload
-    rng = np.random.default_rng()
-
-    for e, batch in enumerate(
-        chunks(lst=list(range(X_train.shape[1])), thumbs_per_batch=8000)
-    ):
-
-        rot0 = X_train[:, batch[0]:(batch[-1] + 1)]
+    augmented_multiplier = 4
+    if not os.path.exists(concatenated_batch_dir):
         
-        # concatenate rotated versions of the images to the originals
-        rot90 = np.rot90(rot0, k=1, axes=(2, 3))
-        rot180 = np.rot90(rot0, k=2, axes=(2, 3))
-        rot270 = np.rot90(rot0, k=3, axes=(2, 3))
-        augmented = np.concatenate((rot0, rot90, rot180, rot270), axis=1)
+        print()
         
-        X_shuffle = zarr.open(
-            os.path.join(shuffled_batch_dir, f'batch_{e+1}'),
-            mode='w',
-            shape=(
-                X_train.shape[0], augmented.shape[1],
-                X_train.shape[2], X_train.shape[3]
-            ),
-            chunks=(
-                X_train.chunks[0], X_train.chunks[1],
-                X_train.chunks[2], X_train.chunks[3]
-            ),
-            compressor=X_train.compressor, dtype=X_train.dtype
-        )  
-        
-        print(
-            f'Shuffling batch {e+1} of augmented image patches '
-            f'of length {augmented.shape[1]}...'
-        )
-        
-        # shuffle the order of cells in each batch
-        rng.shuffle(augmented, axis=1)
-        X_shuffle[:] = augmented
+        # shuffle thumbnails in batches and save as new zarr arrays to avoid memory overload
+        rng = np.random.default_rng()
 
-    # shuffle the order of the batches themselves
-    batches = [i for i in os.listdir(shuffled_batch_dir)]
-    random.shuffle(batches)
+        for e, batch in enumerate(
+            chunks(lst=list(range(X_train.shape[1])), thumbs_per_batch=8000)
+        ):
 
-    for e, i in enumerate(batches):
-
-        print(f'Concatenating {i} to final shuffled Zarr file...')
-
-        z = zarr.open(os.path.join(shuffled_batch_dir, i), mode='r')
-
-        if e == 0:
-
-            # initialize zarr to store shuffled batches
-            shuffle_final = zarr.open(
-                concatenated_batch_dir,
+            rot0 = X_train[:, batch[0]:(batch[-1] + 1)]
+            
+            # concatenate rotated versions of the images to the originals
+            rot90 = np.rot90(rot0, k=1, axes=(2, 3))
+            rot180 = np.rot90(rot0, k=2, axes=(2, 3))
+            rot270 = np.rot90(rot0, k=3, axes=(2, 3))
+            augmented = np.concatenate((rot0, rot90, rot180, rot270), axis=1)
+            
+            X_shuffle = zarr.open(
+                os.path.join(shuffled_batch_dir, f'batch_{e+1}'),
                 mode='w',
-                shape=(z.shape[0], z.shape[1], z.shape[2], z.shape[3]),
-                chunks=(z.chunks[0], z.chunks[1], z.chunks[2], z.chunks[3]),
-                compressor=z.compressor, dtype=z.dtype
+                shape=(
+                    X_train.shape[0], augmented.shape[1],
+                    X_train.shape[2], X_train.shape[3]
+                ),
+                chunks=(
+                    X_train.chunks[0], X_train.chunks[1],
+                    X_train.chunks[2], X_train.chunks[3]
+                ),
+                compressor=X_train.compressor, dtype=X_train.dtype
+            )  
+            
+            print(
+                f'Shuffling batch {e+1} of augmented image patches '
+                f'of length {augmented.shape[1]}...'
             )
+            
+            # shuffle the order of cells in each batch
+            rng.shuffle(augmented, axis=1)
+            X_shuffle[:] = augmented
 
-            shuffle_final[:] = z
-            continue
+        # shuffle the order of the batches themselves
+        batches = [i for i in os.listdir(shuffled_batch_dir)]
+        random.shuffle(batches)
 
-        shuffle_final.append(z, axis=1)
+        for e, i in enumerate(batches):
 
-    augmented_multiplier = int(shuffle_final.shape[1] / X_train.shape[1])
+            print(f'Concatenating {i} to final shuffled Zarr file...')
 
+            z = zarr.open(os.path.join(shuffled_batch_dir, i), mode='r')
+
+            if e == 0:
+
+                # initialize zarr to store shuffled batches
+                shuffle_final = zarr.open(
+                    concatenated_batch_dir,
+                    mode='w',
+                    shape=(z.shape[0], z.shape[1], z.shape[2], z.shape[3]),
+                    chunks=(z.chunks[0], z.chunks[1], z.chunks[2], z.chunks[3]),
+                    compressor=z.compressor, dtype=z.dtype
+                )
+
+                shuffle_final[:] = z
+                continue
+
+            shuffle_final.append(z, axis=1)
+
+        augmented_multiplier = int(shuffle_final.shape[1] / X_train.shape[1])
+    
     return augmented_multiplier
 
 
-def batch_generator(X, batch_size, steps, percentile_cutoffs, concatenated_batch_dir):
+def batch_generator(X, batch_size, steps, percentile_cutoffs, concatenated_batch_dir, masked_model, mask_kernel_size):
 
     idx_start = 0
     idx_stop = batch_size
@@ -165,21 +166,22 @@ def batch_generator(X, batch_size, steps, percentile_cutoffs, concatenated_batch
             batch = transposeZarr(z=z)
 
             # compute vignette mask
-            mask = compute_vignette_mask(img_batch=batch, kernel_size=40)
+            mask, vmin, vmax = compute_vignette_mask(img_batch=batch, std_dev=mask_kernel_size)
 
             # preprocess image patches
-            batch = clip_outlier_pixels(log_transform(batch), percentile_cutoffs) * mask
-
+            batch = clip_outlier_pixels(log_transform(batch), percentile_cutoffs)
+            
+            if masked_model:
+                batch *= mask
+            
             # visualize patches before and after vignetting
             # import matplotlib.pyplot as plt
             # for ch in range(batch.shape[3]):
             #     fig, (ax1, ax2) = plt.subplots(1, 2)
-            #     min = batch[i][:, :, ch].min()
-            #     max = batch[i][:, :, ch].max()
-            #     im1 = ax1.imshow(batch[i][:, :, ch], vmin=None, vmax=None)
+            #     im1 = ax1.imshow(batch_raw[45, :, :, ch], vmin=None, vmax=None)
             #     ax1.axis('off')
             #     ax1.set_title('Original')
-            #     im2 = ax2.imshow((batch[i][:, :, ch] * mask[:, :, 0]), vmin=None, vmax=None)
+            #     im2 = ax2.imshow((batch[45, :, :, ch]), vmin=None, vmax=None)
             #     ax2.axis('off')
             #     ax2.set_title('Vignetted')
             #     plt.colorbar(im1, fraction=0.046, pad=0.04)
@@ -370,6 +372,7 @@ def TRAIN_VAE(config):
         # needed for keras.Model not to throw
         # "You are passing KerasTensor(type_spec=TensorSpec(shape=()..." error
         # this fix is compatible with tensorflow 2.6.3
+        # MUST COMMENT OUT TO DEBUG WITH MATPLOTLIB!!
         
         cellcutter_output_path = os.path.join(
             config.output_path, f'2_cellcutter_output_win{config.window_size}'
@@ -431,11 +434,13 @@ def TRAIN_VAE(config):
 
         # initialize batch generators
         training_batch_generator = batch_generator(
-            X=None, batch_size=config.batch_size, steps=steps_per_epoch, 
+            X=None, batch_size=config.batch_size, steps=steps_per_epoch,
+            masked_model=config.masked_model, mask_kernel_size=config.mask_kernel_size,
             percentile_cutoffs=percentile_cutoffs, concatenated_batch_dir=concatenated_batch_dir
         )
         validation_batch_generator = batch_generator(
-            X=X_valid, batch_size=config.batch_size, steps=validation_steps, 
+            X=X_valid, batch_size=config.batch_size, steps=validation_steps,
+            masked_model=config.masked_model, mask_kernel_size=config.mask_kernel_size, 
             percentile_cutoffs=percentile_cutoffs, concatenated_batch_dir=concatenated_batch_dir
         )
 

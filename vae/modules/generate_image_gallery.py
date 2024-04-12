@@ -32,7 +32,7 @@ def PlotInputImgs(numExamples, numColumns, imgs, seg, intensity_multiplier, labe
     grid_dims = (numRows, numColumns)
 
     sns.set_style('whitegrid')
-    fig = plt.figure(figsize=(13, 10))
+    fig = plt.figure(figsize=(20, 10))
 
     custom_lines = []
     for e, row in enumerate(labels.iterrows()):
@@ -46,10 +46,10 @@ def PlotInputImgs(numExamples, numColumns, imgs, seg, intensity_multiplier, labe
         overlay = np.zeros((imgs.shape[2], imgs.shape[3]))
 
         # add centroid point at the center of the image
-        overlay[
-            int(imgs.shape[2] / 2):int(imgs.shape[2] / 2) + 1,
-            int(imgs.shape[3] / 2):int(imgs.shape[3] / 2) + 1
-        ] = 1
+        # overlay[
+        #     int(imgs.shape[2] / 2):int(imgs.shape[2] / 2) + 1,
+        #     int(imgs.shape[3] / 2):int(imgs.shape[3] / 2) + 1
+        # ] = 1
         
         overlay = gray2rgb(overlay)
         
@@ -84,7 +84,7 @@ def PlotInputImgs(numExamples, numColumns, imgs, seg, intensity_multiplier, labe
             # convert segmentation thumbnail to RGB
             seg_slice = gray2rgb(seg_slice) * 0.25  # decrease alpha
 
-        overlay += seg_slice
+        # overlay += seg_slice
 
         label = row[1]['cluster_2d']
 
@@ -96,7 +96,7 @@ def PlotInputImgs(numExamples, numColumns, imgs, seg, intensity_multiplier, labe
         legend_elements.append(Line2D([0], [0], color=color, lw=5, label=name))
 
     fig.legend(
-        handles=legend_elements, prop={'size': 11}, bbox_to_anchor=(0.98, 0.99))
+        handles=legend_elements, prop={'size': 11}, bbox_to_anchor=(0.94, 0.99))
 
     plt.subplots_adjust(bottom=0.01, top=0.99, left=0.01, right=0.85)
     plt.savefig(os.path.join(save_dir, f'{fileName}.png'), dpi=800, bbox_inches='tight')
@@ -141,20 +141,16 @@ def GENERATE_IMAGE_GALLERY(config):
             range(0, z.shape[1]), config.gallery_size, replace=False
         )
 
-        # REMOVE when done with comparision with encode images originals
-        # and use config.gallery_size for numExamples in PlotInputImgs function
-        thumb_ids = np.array(range(0, 100))
-
         imgs = z.get_orthogonal_selection((slice(None), thumb_ids))
         seg = z_seg.get_orthogonal_selection((slice(None), thumb_ids))
 
         labels = labels.iloc[thumb_ids]
         labels.reset_index(drop=True, inplace=True)
-        # labels.sort_values(by='cluster_2d', inplace=True)
+        labels.sort_values(by='cluster_2d', inplace=True)
 
         PlotInputImgs(
-            numExamples=100,  # config.gallery_size
-            numColumns=10,
+            numExamples=config.gallery_size,
+            numColumns=20,
             imgs=imgs,
             seg=seg,
             intensity_multiplier=1.1,

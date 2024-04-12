@@ -48,11 +48,11 @@ logger = logging.getLogger(__name__)
 # log_banner(logger.info, 'Boolean classifications')
 
 
-def reverse_processing(cutoffs, channel_slice, channel_name, contrast_limits):
+def reverse_processing(percentile_cutoffs, channel_slice, channel_name, contrast_limits):
     """Reverses percentile normalization and log10-transformation,
        pixel outliers remained clipped)."""
 
-    lower_cutoff_log, upper_cutoff_log = cutoffs[channel_name]
+    lower_cutoff_log, upper_cutoff_log = percentile_cutoffs[channel_name]
 
     # reverse percentile normalization
     channel_slice = (
@@ -76,7 +76,7 @@ def reverse_processing(cutoffs, channel_slice, channel_name, contrast_limits):
     return channel_slice
 
 
-def DecodeVectors(decoder, cutoffs, contrast_limits, X_encoded, X_seg, orig_input_dims, channel_color_dict, intensity_multiplier):
+def DecodeVectors(decoder, percentile_cutoffs, contrast_limits, X_encoded, X_seg, orig_input_dims, channel_color_dict, intensity_multiplier):
 
     # initialize a numpy array to store reconstructed thumbnails
     X_decoded = np.empty(shape=(0, orig_input_dims[0], orig_input_dims[1], 3))
@@ -115,7 +115,9 @@ def DecodeVectors(decoder, cutoffs, contrast_limits, X_encoded, X_seg, orig_inpu
 
             channel_slice = reconstructed_img[:, :, ch]
 
-            channel_slice = reverse_processing(cutoffs, channel_slice, name, contrast_limits)
+            channel_slice = reverse_processing(
+                percentile_cutoffs, channel_slice, name, contrast_limits
+            )
 
             channel_slice = gray2rgb(channel_slice)
 
@@ -134,7 +136,7 @@ def DecodeVectors(decoder, cutoffs, contrast_limits, X_encoded, X_seg, orig_inpu
  
 def ScatterReconstructions(X_decoded, X_encoded_embedded, zoom, ax):
 
-    def imscatter(x, y, ax, imageData, zoom):
+    def imscatter(x, y, imageData, ax, zoom):
 
         images = []
         for i in range(len(x)):
@@ -147,15 +149,15 @@ def ScatterReconstructions(X_decoded, X_encoded_embedded, zoom, ax):
 
         ax.update_datalim(np.column_stack([x, y]))
         ax.autoscale()
-
+    
     imscatter(
-        X_encoded_embedded[:, 0], X_encoded_embedded[:, 1],
+        x=X_encoded_embedded[:, 0], y=X_encoded_embedded[:, 1],
         imageData=X_decoded, ax=ax, zoom=zoom)
 
 
 def PlotLatentSpace(reconstructions, zoom, X_encoded_embedded, X_decoded, y, channel_color_dict, scatter_point_size, filename, save_dir):
 
-    fig, ax = plt.subplots(figsize=(10, 10))
+    fig, ax = plt.subplots()
 
     if reconstructions:
 
@@ -174,7 +176,7 @@ def PlotLatentSpace(reconstructions, zoom, X_encoded_embedded, X_decoded, y, cha
         )
 
         plt.legend(
-            handles=custom_lines, prop={'size': 11}, labelspacing=0.7, bbox_to_anchor=(1.22, 1.0)
+            handles=custom_lines, prop={'size': 11}, labelspacing=0.7, bbox_to_anchor=(1.15, 1.0)
         )
 
         plt.grid(False)
@@ -186,10 +188,10 @@ def PlotLatentSpace(reconstructions, zoom, X_encoded_embedded, X_decoded, y, cha
         # if VAE clustering
         if isinstance(y, np.ndarray):
             num_labels = len(np.unique(y))
-            num_colors = plt.cm.get_cmap('tab20').N
+            num_colors = plt.colormaps['tab20'].N
             palette_multiplier = math.ceil(num_labels / num_colors)
             palette = []
-            palette.extend(list(plt.cm.get_cmap('tab20').colors))
+            palette.extend(list(plt.colormaps['tab20'].colors))
             palette = palette * palette_multiplier
             palette.insert(0, (0.0, 0.0, 0.0))
             trim = len(palette) - num_labels
@@ -205,18 +207,22 @@ def PlotLatentSpace(reconstructions, zoom, X_encoded_embedded, X_decoded, y, cha
                     Line2D([0], [0], marker='o', color='w', label=lbl, markerfacecolor=color,
                            markeredgecolor='k', lw=0.25, markersize=7)
                 )
-
-            plt.scatter(
+            
+            fig, ax = plt.subplots()
+            ax.scatter(
                 X_encoded_embedded[:, 0], X_encoded_embedded[:, 1],
                 c=c, ec='k', lw=0.0, s=scatter_point_size
             )
+            # ax.set_facecolor('#f4f4f4')
+            ax.set_axisbelow(True)
+            ax.grid(True, lw=1)
 
             plt.legend(
                 handles=legend_elements, fontsize=9.2, labelspacing=0.005, 
-                bbox_to_anchor=(1.12, 1.01)
+                bbox_to_anchor=(1.15, 1.01)
             )
         else:
-            # consensus HDBSCAN clustering
+            # segmentation-based Leiden clustering
             # build cmap
             cmap = categorical_cmap(
                 numUniqueSamples=len(y.unique()), numCatagories=10, cmap='tab10', continuous=False
@@ -253,9 +259,10 @@ def PlotLatentSpace(reconstructions, zoom, X_encoded_embedded, X_decoded, y, cha
                            lw=0.25, markersize=9)
                 )
 
-            plt.legend(handles=legend_elements, labelspacing=0.15, bbox_to_anchor=(1.12, 1.0))
+            plt.legend(handles=legend_elements, labelspacing=0.15, bbox_to_anchor=(1.16, 1.0))
 
-        plt.grid(False)
+            plt.grid(False)
+        
         plt.tight_layout()
         plt.savefig(os.path.join(save_dir, f'{filename}.png'), dpi=800)
         plt.close('all')
@@ -497,7 +504,7 @@ class SelectFromCollection(object):
         self.canvas.draw_idle()
 
 
-def LassoVectors(decoder, clustering_labels, cutoffs, contrast_limits, orig_input_dims, imgs_instead_of_points, zoom, X, X_seg, X_encoded, X_encoded_embedded, X_decoded, y, numColumns, intensity_multiplier, max_examples, label_color_dict, channel_color_dict, thumbnail_font_size, save_dir, mask, undo_mask):
+def LassoVectors(decoder, clustering_labels, percentile_cutoffs, contrast_limits, orig_input_dims, imgs_instead_of_points, zoom, X, X_seg, X_encoded, X_encoded_embedded, X_decoded, y, numColumns, intensity_multiplier, max_examples, label_color_dict, channel_color_dict, thumbnail_font_size, save_dir, mask, undo_mask):
 
     data = pd.DataFrame(X_encoded_embedded, columns=['x', 'y'])
 
@@ -690,7 +697,7 @@ def LassoVectors(decoder, clustering_labels, cutoffs, contrast_limits, orig_inpu
                     channel_slice = input_img[:, :, ch]
 
                     channel_slice = reverse_processing(
-                        cutoffs, channel_slice, name, contrast_limits
+                        percentile_cutoffs, channel_slice, name, contrast_limits
                     )
 
                     channel_slice = gray2rgb(channel_slice)
@@ -727,7 +734,7 @@ def LassoVectors(decoder, clustering_labels, cutoffs, contrast_limits, orig_inpu
                     channel_slice = reconstructed_img[:, :, ch]
 
                     channel_slice = reverse_processing(
-                        cutoffs, channel_slice, name, contrast_limits
+                        percentile_cutoffs, channel_slice, name, contrast_limits
                     )
 
                     channel_slice = gray2rgb(channel_slice)
@@ -756,7 +763,7 @@ def LassoVectors(decoder, clustering_labels, cutoffs, contrast_limits, orig_inpu
     plt.close('all')
 
 
-def PlotReconstructedImages(orig_input_dims, cutoffs, contrast_limits, decoder, X, X_seg, X_encoded, y, numColumns, label_color_dict, channel_color_dict, intensity_multiplier, thumbnail_font_size, filename, save_dir, mask, undo_mask):
+def PlotReconstructedImages(orig_input_dims, percentile_cutoffs, contrast_limits, decoder, X, X_seg, X_encoded, y, numColumns, label_color_dict, channel_color_dict, intensity_multiplier, thumbnail_font_size, filename, save_dir, mask, undo_mask):
 
     numSamples = len(X)
     numRows = math.ceil(numSamples / numColumns)
@@ -822,7 +829,7 @@ def PlotReconstructedImages(orig_input_dims, cutoffs, contrast_limits, decoder, 
                     channel_slice = trans[:, :, ch]
 
                     channel_slice = reverse_processing(
-                        cutoffs, channel_slice, name, contrast_limits
+                        percentile_cutoffs, channel_slice, name, contrast_limits
                     )
 
                     channel_slice = gray2rgb(channel_slice)
@@ -859,7 +866,7 @@ def PlotReconstructedImages(orig_input_dims, cutoffs, contrast_limits, decoder, 
                     channel_slice = reconstructed_img[:, :, ch]
 
                     channel_slice = reverse_processing(
-                        cutoffs, channel_slice, name, contrast_limits
+                        percentile_cutoffs, channel_slice, name, contrast_limits
                     )
 
                     channel_slice = gray2rgb(channel_slice)
@@ -983,7 +990,7 @@ def ENCODE_IMAGES(config):
     with open(
         os.path.join(config.output_path, '4_feature_preprocessing_selections/cutoffs.pkl'),
          'rb') as handle:
-        cutoffs = pickle.load(handle)
+        percentile_cutoffs = pickle.load(handle)
 
     save_dir = os.path.join(config.output_path, f'6_latent_space_LD{config.latent_dimension}')
     if not os.path.exists(save_dir):
@@ -1162,14 +1169,15 @@ def ENCODE_IMAGES(config):
 
         y = y_test[0:config.clustering_sample_size].copy()
 
-    # y['cluster_2d'].replace(to_replace={47: '4.7', 413: '4.13', 416: '4.16'}, inplace=True)
-    # y.loc[:, 'cluster_2d'] = y['cluster_2d'].astype('str')
-
     ###########################################################################
-    mask = compute_vignette_mask(X, kernel_size=40)
+    mask, vmin, vmax = compute_vignette_mask(X, std_dev=40)
 
     # preprocess image patches
-    X_transform = clip_outlier_pixels(log_transform(X), cutoffs) * mask
+    X_transform = clip_outlier_pixels(log_transform(X), percentile_cutoffs)
+    
+    if config.masked_model:
+        print('Apply Gaussian vignette mask.')
+        X_transform *= mask
 
     # create a new Zarr to store the processed Dask array image patches
     # patches_store = zarr.open(
@@ -1182,12 +1190,14 @@ def ENCODE_IMAGES(config):
     
     # save the processed Dask array image patches back to the Zarr store
     # da.store(X_transform, patches_store)
-    
+
     ###########################################################################
     # encode test images
     print('Encoding images...')
     X_encoded = encoder.predict(X_transform)
-
+    # X_encoded = np.load('/Users/greg/Desktop/X_encoded_20_nomask.npy')
+    # X_encoded = np.load('/Users/greg/Desktop/X_encoded_20.npy')
+    # X_encoded = np.load('/Users/greg/Desktop/X_encoded_9.npy')
     ###########################################################################
     # embed latent vectors if they are greater than 2D
 
@@ -1218,8 +1228,8 @@ def ENCODE_IMAGES(config):
                 learning_rate=1.0,
                 output_metric='euclidean',
                 min_dist=0.1,
-                repulsion_strength=3,
-                random_state=3,
+                repulsion_strength=5,
+                random_state=1,
                 n_epochs=1000,
                 init='spectral',
                 metric='euclidean',
@@ -1265,7 +1275,7 @@ def ENCODE_IMAGES(config):
     else:
         # simply assign the 2D X_encoded the variable X_encoded_embedded
         X_encoded_embedded = X_encoded.copy()
-
+    
     ###########################################################################
 
     # cluster the data with HDBSCAN
@@ -1284,23 +1294,30 @@ def ENCODE_IMAGES(config):
         match_reference_implementation=False).fit(X_encoded_embedded)
 
     print(np.unique(clustering.labels_))
-
+ 
     ###########################################################################
-    # new = pd.read_csv('/Users/greg/Downloads/latent_vectors_ROT_VIG40_4-cells-leiden.csv')
+    # new = pd.read_csv('/Users/greg/projects/vae-paper/src/input/VAE20_ROT_VIG40/6_latent_space_LD850/clustering_full/UMAP/neighbors15_repulsion1_random1/Leiden_cluster_labels_50PC_29C.csv')
     
-    # # plot latent vectors colored according to high-dimensional Leiden clustering
+    # new = pd.read_csv('/Users/greg/projects/vae-paper/src/input/VAE9_ROT_VIG18/6_latent_space_LD184/clustering_full/UMAP/neighbors30_repulsion5_random1/Leiden_cluster_labels_50PC_32C.csv')
+
+    # new = pd.read_csv(
+    #     '/Users/greg/projects/vae-paper/src/input/VAE20/6_latent_space_LD850/'
+    #     'clustering_full/UMAP/neighbors30_repulsion3_random3/'
+    #     'Leiden_cluster_labels_50PC_36C.csv')
+    
+    # plot latent vectors colored according to high-dimensional Leiden clustering
     # label_color_dict = PlotLatentSpace(
     #     reconstructions=False,
     #     zoom=None,
     #     X_encoded_embedded=X_encoded_embedded,
     #     X_decoded=None,
-    #     y=new['cluster_2d'],
+    #     y=np.array(new['cluster_2d']),  # np.array for function to recognize input as VAE clustering
     #     channel_color_dict=None,
     #     scatter_point_size=144000 / len(X_encoded_embedded),
-    #     filename='Leiden_clustering',
+    #     filename='vector-based_leiden_clustering',
     #     save_dir=save_dir
     # )
-    
+
     # plot latent vectors colored according to prior clustering
     label_color_dict = PlotLatentSpace(
         reconstructions=False,
@@ -1310,7 +1327,7 @@ def ENCODE_IMAGES(config):
         y=y['cluster_2d'],
         channel_color_dict=None,
         scatter_point_size=144000 / len(X_encoded_embedded),
-        filename='consensus_clustering',
+        filename='segmentation-based_leiden_clustering',
         save_dir=save_dir
     )
 
@@ -1328,13 +1345,13 @@ def ENCODE_IMAGES(config):
         y=clustering.labels_,
         channel_color_dict=None,
         scatter_point_size=144000 / len(X_encoded_embedded),
-        filename='latent_clustering',
+        filename='embedding-based_hdbscan_clustering',
         save_dir=save_dir
     )
 
     # reconstruct thumbnail images from latent vectors
     X_decoded = DecodeVectors(
-        decoder=decoder, cutoffs=cutoffs, contrast_limits=contrast_limits,
+        decoder=decoder, percentile_cutoffs=percentile_cutoffs, contrast_limits=contrast_limits,
         X_encoded=X_encoded, X_seg=X_seg,
         orig_input_dims=training_thumb_dims,
         channel_color_dict=config.channel_colors,
@@ -1350,7 +1367,7 @@ def ENCODE_IMAGES(config):
         y=y['cluster_2d'],
         channel_color_dict=config.channel_colors,
         scatter_point_size=144000 / len(X_encoded_embedded),
-        filename='thumbnails',
+        filename='image_patches',
         save_dir=save_dir
     )
 
@@ -1378,7 +1395,7 @@ def ENCODE_IMAGES(config):
         LassoVectors(
             decoder=decoder,
             clustering_labels=clustering.labels_,
-            cutoffs=cutoffs,
+            percentile_cutoffs=percentile_cutoffs,
             contrast_limits=contrast_limits,
             orig_input_dims=training_thumb_dims,
             imgs_instead_of_points=True,
@@ -1397,12 +1414,12 @@ def ENCODE_IMAGES(config):
             thumbnail_font_size=3.0,
             save_dir=save_dir,
             mask=mask,
-            undo_mask=True
+            undo_mask=False
         )
 
     PlotReconstructedImages(
         orig_input_dims=training_thumb_dims,
-        cutoffs=cutoffs,
+        percentile_cutoffs=percentile_cutoffs,
         contrast_limits=contrast_limits,
         decoder=decoder,
         X=X_transform[0:100],
@@ -1442,7 +1459,7 @@ def ENCODE_IMAGES(config):
     # get input thumbnails associated with poor learned reconstruction
     PlotReconstructedImages(
         orig_input_dims=training_thumb_dims,
-        cutoffs=cutoffs,
+        percentile_cutoffs=percentile_cutoffs,
         contrast_limits=contrast_limits,
         decoder=decoder,
         X=X_outliers,

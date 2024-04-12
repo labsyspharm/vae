@@ -27,6 +27,8 @@ class Config:
         config.gallery_size = int(data['gallery_size'])
         config.latent_dimension = int(data['latent_dimension'])
         config.batch_size = int(data['batch_size'])
+        config.masked_model = bool(data['masked_model'])
+        config.mask_std_dev = int(data['mask_std_dev'])
         config.learning_rate = float(data['learning_rate'])
         config.training_epochs = int(data['training_epochs'])
         config.cluster_full_dataset = bool(data['cluster_full_dataset'])
