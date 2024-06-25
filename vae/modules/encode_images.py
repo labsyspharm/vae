@@ -38,7 +38,7 @@ from joblib import Memory
 
 from ..utils import (
     log_banner, log_multiline, log_transform, clip_outlier_pixels, 
-    compute_vignette_mask, transposeZarr
+    compute_vignette_mask, transposeZarr, reverse_processing
 )
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
@@ -46,34 +46,6 @@ logger = logging.getLogger(__name__)
 
 # log_multiline(logger.info, pd.DataFrame().to_string(index=False))
 # log_banner(logger.info, 'Boolean classifications')
-
-
-def reverse_processing(percentile_cutoffs, channel_slice, channel_name, contrast_limits):
-    """Reverses percentile normalization and log10-transformation,
-       pixel outliers remained clipped)."""
-
-    lower_cutoff_log, upper_cutoff_log = percentile_cutoffs[channel_name]
-
-    # reverse percentile normalization
-    channel_slice = (
-        (((upper_cutoff_log - lower_cutoff_log) * (channel_slice - 0)) /
-         (1 - 0)) + lower_cutoff_log
-    )
-
-    # reverse log10-transform
-    channel_slice = np.rint(10 ** channel_slice)
-
-    # Normalize pixel values between lower and upper percentile bounds
-    # lower = np.rint(10**lower_cutoff_log)
-    # upper = np.rint(10**upper_cutoff_log)
-    # channel_slice = (channel_slice-lower) / (upper-lower)
-
-    # Normalize pixel values between lower and upper contrast settings
-    lower = contrast_limits[channel_name][0]
-    upper = contrast_limits[channel_name][1]
-    channel_slice = (channel_slice - lower) / (upper - lower)
-
-    return channel_slice
 
 
 def DecodeVectors(decoder, percentile_cutoffs, contrast_limits, X_encoded, X_seg, orig_input_dims, channel_color_dict, intensity_multiplier):
@@ -104,10 +76,10 @@ def DecodeVectors(decoder, percentile_cutoffs, contrast_limits, X_encoded, X_seg
         overlay = np.zeros((reconstructed_img.shape[0], reconstructed_img.shape[1]))
 
         # add centroid point at the center of the image
-        overlay[
-            int(reconstructed_img.shape[0] / 2):int(reconstructed_img.shape[0] / 2) + 1,
-            int(reconstructed_img.shape[1] / 2):int(reconstructed_img.shape[1] / 2) + 1
-        ] = 1
+        # overlay[
+        #     int(reconstructed_img.shape[0] / 2):int(reconstructed_img.shape[0] / 2) + 1,
+        #     int(reconstructed_img.shape[1] / 2):int(reconstructed_img.shape[1] / 2) + 1
+        # ] = 1
 
         overlay = gray2rgb(overlay)
 
@@ -125,7 +97,7 @@ def DecodeVectors(decoder, percentile_cutoffs, contrast_limits, X_encoded, X_seg
 
             overlay += channel_slice * to_rgb(color)
 
-        overlay += seg_slice.compute()
+        # overlay += seg_slice.compute()
 
         overlay = overlay.reshape((1, orig_input_dims[0], orig_input_dims[1], 3))
 
@@ -157,10 +129,10 @@ def ScatterReconstructions(X_decoded, X_encoded_embedded, zoom, ax):
 
 def PlotLatentSpace(reconstructions, zoom, X_encoded_embedded, X_decoded, y, channel_color_dict, scatter_point_size, filename, save_dir):
 
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(10, 10))
 
     if reconstructions:
-
+        
         ScatterReconstructions(
             X_decoded=X_decoded, X_encoded_embedded=X_encoded_embedded, zoom=zoom, ax=ax
         )
@@ -176,12 +148,13 @@ def PlotLatentSpace(reconstructions, zoom, X_encoded_embedded, X_decoded, y, cha
         )
 
         plt.legend(
-            handles=custom_lines, prop={'size': 11}, labelspacing=0.7, bbox_to_anchor=(1.15, 1.0)
+            handles=custom_lines, prop={'size': 7}, labelspacing=0.7, bbox_to_anchor=(1.15, 1.0)
         )
 
         plt.grid(False)
+        ax.set_aspect('equal')
         plt.tight_layout()
-        plt.savefig(os.path.join(save_dir, f'{filename}.png'), dpi=800)
+        plt.savefig(os.path.join(save_dir, f'{filename}.pdf'))
         plt.close('all')
 
     else:
@@ -193,9 +166,11 @@ def PlotLatentSpace(reconstructions, zoom, X_encoded_embedded, X_decoded, y, cha
             palette = []
             palette.extend(list(plt.colormaps['tab20'].colors))
             palette = palette * palette_multiplier
-            palette.insert(0, (0.0, 0.0, 0.0))
+            # palette.insert(0, (0.0, 0.0, 0.0))
             trim = len(palette) - num_labels
-            palette = palette[:-trim]
+            
+            if not trim == 0:
+                palette = palette[:-trim]
 
             label_color_dict = dict(zip(sorted(np.unique(y)), palette))
             c = [label_color_dict[i] for i in y]
@@ -262,9 +237,11 @@ def PlotLatentSpace(reconstructions, zoom, X_encoded_embedded, X_decoded, y, cha
             plt.legend(handles=legend_elements, labelspacing=0.15, bbox_to_anchor=(1.16, 1.0))
 
             plt.grid(False)
+            ax.set_aspect('equal')
         
         plt.tight_layout()
-        plt.savefig(os.path.join(save_dir, f'{filename}.png'), dpi=800)
+        # plt.savefig(os.path.join(save_dir, f'{filename}.png'), dpi=800)
+        plt.savefig(os.path.join(save_dir, f'{filename}.pdf'))
         plt.close('all')
 
         return label_color_dict
@@ -782,6 +759,7 @@ def PlotReconstructedImages(orig_input_dims, percentile_cutoffs, contrast_limits
     for panel in range(outer_grid_rows * outer_grid_cols):
 
         inner = gridspec.GridSpecFromSubplotSpec(
+
             grid_dims[0], grid_dims[1],
             subplot_spec=outer[panel], wspace=0.1, hspace=0.0)
 
@@ -1166,11 +1144,23 @@ def ENCODE_IMAGES(config):
 
         # read test labels
         y_test = pd.read_csv(os.path.join(config.output_path, '1_cellcutter_input/test.csv'))
-
         y = y_test[0:config.clustering_sample_size].copy()
 
     ###########################################################################
-    mask, vmin, vmax = compute_vignette_mask(X, std_dev=40)
+
+    # def compute_vignette_mask2(img_batch, std_dev):
+    #     import cv2
+    #     window_size = img_batch.shape[1]
+    #     kernel = cv2.getGaussianKernel(window_size, std_dev).astype('float32')
+    #     mask = (kernel * kernel.T)  
+    #     mask = cv2.normalize(mask, None, 0, 1, cv2.NORM_MINMAX)
+    #     mask = mask[np.newaxis, :, :, np.newaxis] 
+
+    #     return mask
+    
+    # mask = compute_vignette_mask2(X, std_dev=config.mask_std_dev)
+    
+    mask, vmin, vmax = compute_vignette_mask(X, std_dev=config.mask_std_dev)
 
     # preprocess image patches
     X_transform = clip_outlier_pixels(log_transform(X), percentile_cutoffs)
@@ -1192,12 +1182,30 @@ def ENCODE_IMAGES(config):
     # da.store(X_transform, patches_store)
 
     ###########################################################################
-    # encode test images
-    print('Encoding images...')
-    X_encoded = encoder.predict(X_transform)
-    # X_encoded = np.load('/Users/greg/Desktop/X_encoded_20_nomask.npy')
-    # X_encoded = np.load('/Users/greg/Desktop/X_encoded_20.npy')
-    # X_encoded = np.load('/Users/greg/Desktop/X_encoded_9.npy')
+    # encode images
+    try:
+        X_encoded = np.load(
+            os.path.join(save_dir, f'{os.path.basename(config.output_path)}_encodings.npy')
+        )
+        assert X_encoded.shape[0] == X_transform.shape[0]
+    
+    except (FileNotFoundError, AssertionError):
+        print('Encoding images...')
+        X_encoded = encoder.predict(X_transform)
+        np.save(
+            os.path.join(save_dir, f'{os.path.basename(config.output_path)}_encodings'),
+            X_encoded
+        )
+
+        temp = pd.DataFrame(X_encoded)
+        temp.columns = [f'vae_{i}' for i in temp.columns]
+        x_encoded_df = pd.concat(
+            [y['CellID'].reset_index(drop=True), pd.DataFrame(temp)], axis=1)
+        x_encoded_df.to_csv(
+            os.path.join(save_dir, f'{os.path.basename(config.output_path)}_encodings.csv'), 
+            index=False
+        )
+
     ###########################################################################
     # embed latent vectors if they are greater than 2D
 
@@ -1223,12 +1231,12 @@ def ENCODE_IMAGES(config):
         elif config.embedding_algorithm == 'UMAP':
             print('Computing UMAP embedding.')
             X_encoded_embedded = UMAP(
-                n_components=2,
+                n_components=3,
                 n_neighbors=30,
                 learning_rate=1.0,
                 output_metric='euclidean',
                 min_dist=0.1,
-                repulsion_strength=5,
+                repulsion_strength=3,
                 random_state=1,
                 n_epochs=1000,
                 init='spectral',
@@ -1275,7 +1283,7 @@ def ENCODE_IMAGES(config):
     else:
         # simply assign the 2D X_encoded the variable X_encoded_embedded
         X_encoded_embedded = X_encoded.copy()
-    
+
     ###########################################################################
 
     # cluster the data with HDBSCAN
@@ -1294,8 +1302,10 @@ def ENCODE_IMAGES(config):
         match_reference_implementation=False).fit(X_encoded_embedded)
 
     print(np.unique(clustering.labels_))
- 
+
     ###########################################################################
+    patches = pd.read_csv('/Users/greg/projects/vae-paper/src/output/leiden_clustering/VAE40_ROT_encodings-patches.csv')
+    
     # new = pd.read_csv('/Users/greg/projects/vae-paper/src/input/VAE20_ROT_VIG40/6_latent_space_LD850/clustering_full/UMAP/neighbors15_repulsion1_random1/Leiden_cluster_labels_50PC_29C.csv')
     
     # new = pd.read_csv('/Users/greg/projects/vae-paper/src/input/VAE9_ROT_VIG18/6_latent_space_LD184/clustering_full/UMAP/neighbors30_repulsion5_random1/Leiden_cluster_labels_50PC_32C.csv')
@@ -1304,19 +1314,19 @@ def ENCODE_IMAGES(config):
     #     '/Users/greg/projects/vae-paper/src/input/VAE20/6_latent_space_LD850/'
     #     'clustering_full/UMAP/neighbors30_repulsion3_random3/'
     #     'Leiden_cluster_labels_50PC_36C.csv')
-    
+
     # plot latent vectors colored according to high-dimensional Leiden clustering
-    # label_color_dict = PlotLatentSpace(
-    #     reconstructions=False,
-    #     zoom=None,
-    #     X_encoded_embedded=X_encoded_embedded,
-    #     X_decoded=None,
-    #     y=np.array(new['cluster_2d']),  # np.array for function to recognize input as VAE clustering
-    #     channel_color_dict=None,
-    #     scatter_point_size=144000 / len(X_encoded_embedded),
-    #     filename='vector-based_leiden_clustering',
-    #     save_dir=save_dir
-    # )
+    label_color_dict = PlotLatentSpace(
+        reconstructions=False,
+        zoom=None,
+        X_encoded_embedded=X_encoded_embedded,
+        X_decoded=None,
+        y=np.array(patches['Cluster'][patches['CellID'].isin(y['CellID'])]), # np.array for function to recognize input as VAE clustering
+        channel_color_dict=None,
+        scatter_point_size=150000 / len(X_encoded_embedded),
+        filename='vector-based_leiden_clustering',
+        save_dir=save_dir
+    )
 
     # plot latent vectors colored according to prior clustering
     label_color_dict = PlotLatentSpace(
@@ -1348,22 +1358,72 @@ def ENCODE_IMAGES(config):
         filename='embedding-based_hdbscan_clustering',
         save_dir=save_dir
     )
-
+    import pdb; pdb.set_trace()
     # reconstruct thumbnail images from latent vectors
-    X_decoded = DecodeVectors(
-        decoder=decoder, percentile_cutoffs=percentile_cutoffs, contrast_limits=contrast_limits,
-        X_encoded=X_encoded, X_seg=X_seg,
-        orig_input_dims=training_thumb_dims,
-        channel_color_dict=config.channel_colors,
-        intensity_multiplier=1.1
-    )
+    # X_decoded = DecodeVectors(
+    #     decoder=decoder, percentile_cutoffs=percentile_cutoffs, contrast_limits=contrast_limits,
+    #     X_encoded=X_encoded, X_seg=X_seg,
+    #     orig_input_dims=training_thumb_dims,
+    #     channel_color_dict=config.channel_colors,
+    #     intensity_multiplier=1.3
+    # )
+
+    # initialize a numpy array to store reconstructed thumbnails
+    X_transform_rgb = np.empty(shape=(0, training_thumb_dims[0], training_thumb_dims[1], 3))
+    intensity_multiplier = 1.0
+    
+    for e, transform in enumerate(X_transform):
+
+        if e % 200 == 0:
+            print(e)
+        
+        reconstructed_img = transform.reshape(
+            training_thumb_dims[0], training_thumb_dims[1], training_thumb_dims[2]
+        )
+
+        # undo mask
+        reconstructed_img /= mask[0, :, :, :]
+
+        # initialize image overlay
+        overlay = np.zeros((reconstructed_img.shape[0], reconstructed_img.shape[1]))
+
+        # add centroid point at the center of the image
+        # overlay[
+        #     int(reconstructed_img.shape[0] / 2):int(reconstructed_img.shape[0] / 2) + 1,
+        #     int(reconstructed_img.shape[1] / 2):int(reconstructed_img.shape[1] / 2) + 1
+        # ] = 1
+
+        overlay = gray2rgb(overlay)
+
+        for name, (ch, color) in config.channel_colors.items():
+
+            channel_slice = reconstructed_img[:, :, ch]
+
+            channel_slice = reverse_processing(
+                        percentile_cutoffs, channel_slice, name, contrast_limits
+                    )
+
+            # apply different size mask for viz only
+            # channel_slice *= mask[0, :, :, 0]
+
+            channel_slice = gray2rgb(channel_slice)
+
+            channel_slice = channel_slice * intensity_multiplier
+
+            overlay += channel_slice.compute() * to_rgb(color)
+
+        # overlay += seg_slice.compute()
+
+        overlay = overlay.reshape((1, training_thumb_dims[0], training_thumb_dims[1], 3))
+
+        X_transform_rgb = np.concatenate((X_transform_rgb, overlay), axis=0)
 
     # plot latent vectors represented as their learned representations
     PlotLatentSpace(
         reconstructions=True,
         zoom=0.5,
         X_encoded_embedded=X_encoded_embedded,
-        X_decoded=X_decoded,
+        X_decoded=X_transform_rgb, # X_decoded,
         y=y['cluster_2d'],
         channel_color_dict=config.channel_colors,
         scatter_point_size=144000 / len(X_encoded_embedded),

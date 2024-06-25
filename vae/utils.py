@@ -108,3 +108,33 @@ def compute_vignette_mask(img_batch, std_dev):
         mask = crop_vignette_mask(mask=mask, window_size=window_size)
     
     return mask, vmin, vmax
+
+
+def reverse_processing(percentile_cutoffs, channel_slice, channel_name, contrast_limits):
+    """Reverses percentile normalization and log10-transformation,
+       pixel outliers remained clipped)."""
+
+    lower_cutoff_log, upper_cutoff_log = percentile_cutoffs[channel_name]
+
+    # reverse percentile normalization
+    channel_slice = (
+        (((upper_cutoff_log - lower_cutoff_log) * (channel_slice - 0)) /
+         (1 - 0)) + lower_cutoff_log
+    )
+
+    # reverse log10-transform
+    channel_slice = np.rint(10 ** channel_slice)
+
+    # Normalize pixel values between lower and upper percentile bounds
+    # lower = np.rint(10**lower_cutoff_log)
+    # upper = np.rint(10**upper_cutoff_log)
+    # channel_slice = (channel_slice-lower) / (upper-lower)
+
+    # Apply image contrast settings
+    lower = contrast_limits[channel_name][0]
+    upper = contrast_limits[channel_name][1]
+    channel_slice = (channel_slice - lower) / (upper - lower)
+
+    channel_slice = np.clip(channel_slice, 0, 1)
+
+    return channel_slice

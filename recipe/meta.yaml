@@ -35,9 +35,9 @@ requirements:
     - pyarrow
     - pyyaml
     - seaborn
-    - tensorflow
+    - tensorflow=2.15.0
     - cellcutter
-    - opencv-python
+    - opencv
     - dask
 
 test:

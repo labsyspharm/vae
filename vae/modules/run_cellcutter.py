@@ -29,18 +29,18 @@ def RUN_CELLCUTTER(config):
             id = markers['channel_number'][markers['marker_name'] == i].values[0]
             marker_channel_numbers.append(str(id))
 
-        for name in ['test', 'train', 'validate']:
+        for name in ['test', 'train', 'validate']:  
             print()
             print(f'Cutting {name} data...')
+
             run(
                 ["cut_cells", "-z", "-f", "--window-size", str(config.window_size),
                  "--cells-per-chunk", str(config.cells_per_chunk),
-                 "--cache-size", str(config.cache_size_cellcutter), str(config.tif_path),
-                 str(config.mask_path),
+                 "--cache-size", str(config.cache_size_cellcutter), 
+                 str(config.tif_path), str(config.mask_path),
                  os.path.join(cellcutter_input_path, f"{name}.csv"),
-                 os.path.join(
-                    save_dir, f"{name}_thumbnails_{config.window_size}.zip"),
-                 "--channels"
+                 os.path.join(save_dir, f"{name}_thumbnails_{config.window_size}.zip"),
+                 "--channels",  
                  ] + marker_channel_numbers
             )
 
@@ -50,9 +50,7 @@ def RUN_CELLCUTTER(config):
                  "--cache-size", str(config.cache_size_cellcutter),
                  str(config.outlines_path), str(config.mask_path),
                  os.path.join(cellcutter_input_path, f"{name}.csv"),
-                 os.path.join(
-                    save_dir,
-                    f"{name}_thumbnails_{config.window_size}_seg.zip"),
+                 os.path.join(save_dir, f"{name}_thumbnails_{config.window_size}_seg.zip"),
                  "--channels", "1"
                  ]
             )

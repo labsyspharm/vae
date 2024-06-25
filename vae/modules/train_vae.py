@@ -60,6 +60,7 @@ def chunks(lst, thumbs_per_batch):
 def augment_and_shuffle_data(X_train, shuffled_batch_dir, concatenated_batch_dir):
     
     augmented_multiplier = 4
+    
     if not os.path.exists(concatenated_batch_dir):
         
         print()
@@ -78,7 +79,7 @@ def augment_and_shuffle_data(X_train, shuffled_batch_dir, concatenated_batch_dir
             rot180 = np.rot90(rot0, k=2, axes=(2, 3))
             rot270 = np.rot90(rot0, k=3, axes=(2, 3))
             augmented = np.concatenate((rot0, rot90, rot180, rot270), axis=1)
-            
+
             X_shuffle = zarr.open(
                 os.path.join(shuffled_batch_dir, f'batch_{e+1}'),
                 mode='w',
@@ -133,7 +134,7 @@ def augment_and_shuffle_data(X_train, shuffled_batch_dir, concatenated_batch_dir
     return augmented_multiplier
 
 
-def batch_generator(X, batch_size, steps, percentile_cutoffs, concatenated_batch_dir, masked_model, mask_kernel_size):
+def batch_generator(X, batch_size, steps, percentile_cutoffs, concatenated_batch_dir, masked_model, mask_std_dev):
 
     idx_start = 0
     idx_stop = batch_size
@@ -166,7 +167,7 @@ def batch_generator(X, batch_size, steps, percentile_cutoffs, concatenated_batch
             batch = transposeZarr(z=z)
 
             # compute vignette mask
-            mask, vmin, vmax = compute_vignette_mask(img_batch=batch, std_dev=mask_kernel_size)
+            mask, vmin, vmax = compute_vignette_mask(img_batch=batch, std_dev=mask_std_dev)
 
             # preprocess image patches
             batch = clip_outlier_pixels(log_transform(batch), percentile_cutoffs)
@@ -342,15 +343,15 @@ def build_and_fit_model(X_train, steps_per_epoch, X_valid, validation_steps, img
         print(f'Loading existing weights at {tf.train.latest_checkpoint(checkpoint_path)}.')
         vae.load_weights(tf.train.latest_checkpoint(checkpoint_path)).expect_partial()
 
-    vae.fit(
-        x=training_batch_generator, steps_per_epoch=steps_per_epoch, epochs=training_epochs,
-        validation_data=validation_batch_generator, validation_steps=validation_steps,
-        callbacks=[
-            model_checkpoint, tensorboard,
-            ShuffleData(X_train, shuffled_batch_dir, concatenated_batch_dir)
-        ],
-        verbose=1, use_multiprocessing=False
-    )
+    # vae.fit(
+    #     x=training_batch_generator, steps_per_epoch=steps_per_epoch, epochs=training_epochs,
+    #     validation_data=validation_batch_generator, validation_steps=validation_steps,
+    #     callbacks=[
+    #         model_checkpoint, tensorboard,
+    #         ShuffleData(X_train, shuffled_batch_dir, concatenated_batch_dir)
+    #     ],
+    #     verbose=1, use_multiprocessing=False
+    # )
 
     # encoder model statement
     encoder = Model(input_img, z_mu)
@@ -435,12 +436,12 @@ def TRAIN_VAE(config):
         # initialize batch generators
         training_batch_generator = batch_generator(
             X=None, batch_size=config.batch_size, steps=steps_per_epoch,
-            masked_model=config.masked_model, mask_kernel_size=config.mask_kernel_size,
+            masked_model=config.masked_model, mask_std_dev=config.mask_std_dev,
             percentile_cutoffs=percentile_cutoffs, concatenated_batch_dir=concatenated_batch_dir
         )
         validation_batch_generator = batch_generator(
             X=X_valid, batch_size=config.batch_size, steps=validation_steps,
-            masked_model=config.masked_model, mask_kernel_size=config.mask_kernel_size, 
+            masked_model=config.masked_model, mask_std_dev=config.mask_std_dev, 
             percentile_cutoffs=percentile_cutoffs, concatenated_batch_dir=concatenated_batch_dir
         )
 

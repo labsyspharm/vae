@@ -42,7 +42,17 @@ def GENERATE_CELLCUTTER_INPUT(config):
             frac=config.percent_cells, replace=False, weights=weights['weights'],
             random_state=0, axis=0
         )
+
+        # remove cells affected by artifacts missed during initial QC
+        # these artifacts were identified by VAE clustering 
+        # (cluster 27, 29, and 30 in 20x20um analysis)
         
+        # residual_artifact_cellids = main['CellID'][main['VAE20_ROT_res2.0'].isin([27, 29, 30])]
+        residual_artifact_cellids = pd.read_csv(
+            '/Users/greg/projects/vae-paper/src/input/residual_artifact_cellids.csv'
+        )
+        csv = csv[~csv['CellID'].isin(residual_artifact_cellids['CellID'])]
+
         print()
         print('Cells per cluster after cluster-weighted random sampling:')
         print(csv.groupby('cluster_2d').size().sort_values(ascending=False))
