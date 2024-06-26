@@ -18,6 +18,7 @@ from keras.models import save_model
 from tensorflow.keras import layers
 from tensorflow.keras import backend as K
 from tensorflow.keras.optimizers import RMSprop
+
 from keras.callbacks import ModelCheckpoint, TensorBoard
 
 from tensorflow.python.framework.ops import disable_eager_execution
@@ -343,15 +344,15 @@ def build_and_fit_model(X_train, steps_per_epoch, X_valid, validation_steps, img
         print(f'Loading existing weights at {tf.train.latest_checkpoint(checkpoint_path)}.')
         vae.load_weights(tf.train.latest_checkpoint(checkpoint_path)).expect_partial()
 
-    # vae.fit(
-    #     x=training_batch_generator, steps_per_epoch=steps_per_epoch, epochs=training_epochs,
-    #     validation_data=validation_batch_generator, validation_steps=validation_steps,
-    #     callbacks=[
-    #         model_checkpoint, tensorboard,
-    #         ShuffleData(X_train, shuffled_batch_dir, concatenated_batch_dir)
-    #     ],
-    #     verbose=1, use_multiprocessing=False
-    # )
+    vae.fit(
+        x=training_batch_generator, steps_per_epoch=steps_per_epoch, epochs=training_epochs,
+        validation_data=validation_batch_generator, validation_steps=validation_steps,
+        callbacks=[
+            model_checkpoint, tensorboard,
+            ShuffleData(X_train, shuffled_batch_dir, concatenated_batch_dir)
+        ],
+        verbose=1, use_multiprocessing=False
+    )
 
     # encoder model statement
     encoder = Model(input_img, z_mu)
@@ -375,6 +376,8 @@ def TRAIN_VAE(config):
         # this fix is compatible with tensorflow 2.6.3
         # MUST COMMENT OUT TO DEBUG WITH MATPLOTLIB!!
         
+        print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
+
         cellcutter_output_path = os.path.join(
             config.output_path, f'2_cellcutter_output_win{config.window_size}'
         )
