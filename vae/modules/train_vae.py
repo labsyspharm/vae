@@ -1,5 +1,6 @@
 import os
 import re
+import sys
 import pickle
 import logging
 
@@ -9,29 +10,46 @@ import datetime
 import numpy as np
 
 import zarr
+import dask.array as da
 
 import tensorflow as tf
-
 from tensorflow import keras
-from keras.models import Model
-from keras.models import save_model
+from tensorflow.keras.models import Model
+from tensorflow.keras.models import save_model
 from tensorflow.keras import layers
 from tensorflow.keras import backend as K
+from tensorflow.keras.utils import Sequence
+# from tensorflow.python.keras.utils.data_utils import Sequence  # this only works with generator_to_tfdata, otherwise error: AttributeError: 'DataGenerator' object has no attribute 'shape'
 from tensorflow.keras.optimizers import RMSprop
-
-from keras.callbacks import ModelCheckpoint, TensorBoard
-
+from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard
 from tensorflow.python.framework.ops import disable_eager_execution
-# disable_eager_execution()
-# needed for keras.Model not to throw
-# "You are passing KerasTensor(type_spec=TensorSpec(shape=()..." error
-# this fix is compatible with tensorflow 2.6.3
-# MUST COMMENT OUT TO DEBUG WITH MATPLOTLIB!!
 
 from ..utils import (
-    log_banner, log_multiline, log_transform, clip_outlier_pixels,
+    log_banner, log_multiline, log_transform, clip_outlier_pixels, 
     compute_vignette_mask, transposeZarr
 )
+
+##################################################################################################
+# to run this script interactively on HMS o2 GPU partition:
+
+# srun --pty -p gpu_quad -t 0-2:00 --gres=gpu:1 --mem=30G bash
+# <or>
+# srun --pty -p gpu -t 0-12:00 --gres=gpu:teslaV100:2 --mem=100G bash
+
+# scontrol show node "compute-g-17-152" (to see specs for node)
+# nvidia-smi (to see specs for the resourced GPU(s))
+
+# conda activate vae
+
+# module load gcc/9.2.0 python/3.10.11 cuda/12.1 (compatible with tensorflow=2.15.0 and teslaX100, Quadro RTX 8000, A100 GPUs)
+
+# cd to VAE I/O directory
+
+# vae --module TRAIN_VAE config.yml
+
+# to run this script with sbatch:
+# sh ~/scripts/vae/submit.sh
+##################################################################################################
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -39,194 +57,80 @@ logger = logging.getLogger(__name__)
 # log_multiline(logger.info, pd.DataFrame().to_string(index=False))
 # log_banner(logger.info, 'Boolean classifications')
 
-##################################################################################################
-# to run this script interactively on HMS o2 cluster:
-# srun --pty -t 12:00:00 --mem=200G -p gpu --gres=gpu:4 bash
-# source ~/venvs/vae/bin/activate
-# module load gcc/6.2.0 cuda/11.2
-# python ~/scripts/vae/5_train_vae.py
 
-# to run this script with sbatch:
-# sh ~/scripts/vae/submit.sh
-##################################################################################################
-
-
-def chunks(lst, thumbs_per_batch):
-    """Yield successive n-sized chunks from a list."""
-    for i in range(0, len(lst), thumbs_per_batch):
-        # print(lst[i:i + thumbs_per_batch])
-        yield lst[i:i + thumbs_per_batch]
-
-
-def augment_and_shuffle_data(X_train, shuffled_batch_dir, concatenated_batch_dir):
+class DataGenerator(Sequence):
+    'generates data for Keras model fit'
     
-    augmented_multiplier = 4
+    def __init__(self, name, zarr, batch_size, 
+        percentile_cutoffs, masked_model, mask, shuffle=True):
+        'initialization'
+        self.name = name
+        self.zarr = zarr
+        self.batch_size = batch_size
+        self.percentile_cutoffs = percentile_cutoffs
+        self.masked_model = masked_model
+        self.mask = mask
+        self.shuffle = shuffle
+        self.indices = np.arange(zarr.shape[1])
+        self.on_epoch_end()
+
+    def __len__(self):
+        'denotes number of batches per epoch'
+        return len(self.indices) // self.batch_size
+
+    def __getitem__(self, index):
+        'generates indices for one batch of data'
+        batch_indices = self.indices[
+            index * self.batch_size:(index + 1) * self.batch_size
+        ]
+        batch_data = self.__data_generation(batch_indices)
+        return batch_data
     
-    if not os.path.exists(concatenated_batch_dir):
+    def __call__(self):
+        for i in range(self.__len__()):
+            yield self.__getitem__(i)
+            
+            if i == self.__len__()-1:
+                self.on_epoch_end()
+    
+    def on_epoch_end(self):
+        'updates indices after each epoch'
+        if self.shuffle:
+            np.random.shuffle(self.indices)
+
+    def __data_generation(self, batch_indices):
+        'yields data containing batch_size samples'
+        X = self.zarr[:, batch_indices, :, :].transpose([1, 2, 3, 0])
+
+        # preprocess image patches
+        X = clip_outlier_pixels(log_transform(X), self.percentile_cutoffs)
+
+        # apply mask
+        if self.masked_model:
+            X *= self.mask
+
+        # rotational data augmention
+        if self.name == 'train':
+            X = rotate_batch(X)
+
+        # NaN test
+        if np.isnan(X).any():
+            print('Batch contains NaNs!!!')
+            sys.exit(1)
         
-        print()
-        
-        # shuffle thumbnails in batches and save as new zarr arrays to avoid memory overload
-        rng = np.random.default_rng()
-
-        for e, batch in enumerate(
-            chunks(lst=list(range(X_train.shape[1])), thumbs_per_batch=8000)
-        ):
-
-            rot0 = X_train[:, batch[0]:(batch[-1] + 1)]
-            
-            # concatenate rotated versions of the images to the originals
-            rot90 = np.rot90(rot0, k=1, axes=(2, 3))
-            rot180 = np.rot90(rot0, k=2, axes=(2, 3))
-            rot270 = np.rot90(rot0, k=3, axes=(2, 3))
-            augmented = np.concatenate((rot0, rot90, rot180, rot270), axis=1)
-
-            X_shuffle = zarr.open(
-                os.path.join(shuffled_batch_dir, f'batch_{e+1}'),
-                mode='w',
-                shape=(
-                    X_train.shape[0], augmented.shape[1],
-                    X_train.shape[2], X_train.shape[3]
-                ),
-                chunks=(
-                    X_train.chunks[0], X_train.chunks[1],
-                    X_train.chunks[2], X_train.chunks[3]
-                ),
-                compressor=X_train.compressor, dtype=X_train.dtype
-            )  
-            
-            print(
-                f'Shuffling batch {e+1} of augmented image patches '
-                f'of length {augmented.shape[1]}...'
-            )
-            
-            # shuffle the order of cells in each batch
-            rng.shuffle(augmented, axis=1)
-            X_shuffle[:] = augmented
-
-        # shuffle the order of the batches themselves
-        batches = [i for i in os.listdir(shuffled_batch_dir)]
-        random.shuffle(batches)
-
-        for e, i in enumerate(batches):
-
-            print(f'Concatenating {i} to final shuffled Zarr file...')
-
-            z = zarr.open(os.path.join(shuffled_batch_dir, i), mode='r')
-
-            if e == 0:
-
-                # initialize zarr to store shuffled batches
-                shuffle_final = zarr.open(
-                    concatenated_batch_dir,
-                    mode='w',
-                    shape=(z.shape[0], z.shape[1], z.shape[2], z.shape[3]),
-                    chunks=(z.chunks[0], z.chunks[1], z.chunks[2], z.chunks[3]),
-                    compressor=z.compressor, dtype=z.dtype
-                )
-
-                shuffle_final[:] = z
-                continue
-
-            shuffle_final.append(z, axis=1)
-
-        augmented_multiplier = int(shuffle_final.shape[1] / X_train.shape[1])
-    
-    return augmented_multiplier
+        return X
 
 
-def batch_generator(X, batch_size, steps, percentile_cutoffs, concatenated_batch_dir, masked_model, mask_std_dev):
-
-    idx_start = 0
-    idx_stop = batch_size
-    step_counter = 1
-
-    if X is None:
-        # load shuffled and augmented thumbnails for model training 
-        X = zarr.open(concatenated_batch_dir)
-
-    while True:
-
-        if step_counter <= steps:
-
-            # isolate batch of zarr thumbnails (unit16) as numpy array
-            batch = X[:, idx_start:idx_stop, :, :]
-
-            # convert batch back to Zarr format, but save as float32
-            z = zarr.zeros(
-                shape=(batch.shape[0], batch.shape[1], batch.shape[2], batch.shape[3]),
-                chunks=(
-                    X.chunks[0], X.chunks[0], X.chunks[2], X.chunks[3]
-                ),
-                compressor=X.compressor, dtype=X.dtype
-            )
-
-            z[:] = batch
-
-            # rearrange Zarr dimensions to fit shape of VAE input
-            # (i.e. cells, x, y, channels)
-            batch = transposeZarr(z=z)
-
-            # compute vignette mask
-            mask, vmin, vmax = compute_vignette_mask(img_batch=batch, std_dev=mask_std_dev)
-
-            # preprocess image patches
-            batch = clip_outlier_pixels(log_transform(batch), percentile_cutoffs)
-            
-            if masked_model:
-                batch *= mask
-            
-            # visualize patches before and after vignetting
-            # import matplotlib.pyplot as plt
-            # for ch in range(batch.shape[3]):
-            #     fig, (ax1, ax2) = plt.subplots(1, 2)
-            #     im1 = ax1.imshow(batch_raw[45, :, :, ch], vmin=None, vmax=None)
-            #     ax1.axis('off')
-            #     ax1.set_title('Original')
-            #     im2 = ax2.imshow((batch[45, :, :, ch]), vmin=None, vmax=None)
-            #     ax2.axis('off')
-            #     ax2.set_title('Vignetted')
-            #     plt.colorbar(im1, fraction=0.046, pad=0.04)
-            #     plt.colorbar(im2, fraction=0.046, pad=0.04)
-            #     plt.tight_layout() 
-            #     plt.show()
-            #     plt.close()
-            
-            if np.isnan(batch).any().compute():
-                print('NaNs in batch data!!!')
-
-            yield (batch, None)
-
-            idx_start += batch_size
-            idx_stop += batch_size
-            step_counter += 1
-
-        else:
-
-            idx_start = 0
-            idx_stop = batch_size
-            step_counter = 1
+def rotate_batch(batch):
+    num_images = batch.shape[0]
+    rotation_angles = np.random.randint(0, 4, size=num_images)
+    for i in range(num_images):
+        batch[i] = np.rot90(batch[i], rotation_angles[i], axes=(0,1))
+    return batch
 
 
-class ShuffleData(keras.callbacks.Callback):
-    
-    def __init__(self, X_train, shuffled_batch_dir, concatenated_batch_dir):
-        self.X_train = X_train
-        self.shuffled_batch_dir = shuffled_batch_dir
-        self.concatenated_batch_dir = concatenated_batch_dir
-
-    def on_epoch_begin(self, epoch, log=None):
-
-        print()
-        if epoch > 0:
-            augment_and_shuffle_data(
-                X_train=self.X_train, shuffled_batch_dir=self.shuffled_batch_dir,
-                concatenated_batch_dir=self.concatenated_batch_dir
-            )
-
-
-def build_and_fit_model(X_train, steps_per_epoch, X_valid, validation_steps, img_shape, training_batch_generator, validation_batch_generator, training_epochs, latent_dimension, learning_rate, shuffled_batch_dir, concatenated_batch_dir, save_dir):
-
+def build_and_fit_model(img_shape, latent_dimension, learning_rate, training_epochs, training_data_generator, steps_per_epoch, validation_data_generator, validation_steps, save_dir):
+      
     # ENCODER NETWORK: Input -> Conv2D*4 -> Flatten -> Dense
     input_img = keras.Input(shape=img_shape)
 
@@ -237,10 +141,10 @@ def build_and_fit_model(X_train, steps_per_epoch, X_valid, validation_steps, img
         filters=64, kernel_size=3, padding='same', activation='relu', strides=(2, 2)
     )(x)
     x = layers.Conv2D(filters=64, kernel_size=3, padding='same', activation='relu')(x)
-    
+
     # MAX POOL
     # x = layers.MaxPooling2D(pool_size=(2, 2), strides=2, padding='valid')(x)
-    
+
     x = layers.Conv2D(filters=64, kernel_size=3, padding='same', activation='relu')(x)
 
     # need to know the shape of the network here for the decoder
@@ -323,6 +227,19 @@ def build_and_fit_model(X_train, steps_per_epoch, X_valid, validation_steps, img
     vae.compile(optimizer='rmsprop', loss=None)
     vae.summary()
 
+    # initialize tensorboard
+    tensorboard_log_dir = os.path.join(save_dir, 'tensorboard_logs/fit')
+    log_dir = os.path.join(
+        tensorboard_log_dir, datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    )
+    tensorboard = TensorBoard(log_dir=log_dir, histogram_freq=0)
+    logger.info(
+        'To monitor model training: Open new terminal window, step into VAE virtual environment, '
+        'run tensorboard --logdir <path_to_tensorboard_fit>'
+    )
+    print()
+    
+    # initialize model checkpoint callback
     checkpoint_path = f"{save_dir}/checkpoints"
     model_checkpoint = ModelCheckpoint(
         filepath=os.path.join(checkpoint_path, 'val_loss-{val_loss:.5f}-cp.ckpt'),
@@ -330,28 +247,18 @@ def build_and_fit_model(X_train, steps_per_epoch, X_valid, validation_steps, img
         initial_value_threshold=None
     )
 
-    tensorboard_log_dir = os.path.join(save_dir, 'tensorboard_logs/fit')
-    log_dir = os.path.join(tensorboard_log_dir, datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
-    tensorboard = TensorBoard(log_dir=log_dir, histogram_freq=0)
-
-    logger.info(
-        'To monitor model training: Open new terminal window, step into VAE virtual environment, '
-        'run tensorboard --logdir <path_to_tensorboard_fit>'
-    )
-    print()
-
+    # load existing model
     if os.path.exists(checkpoint_path):
         print(f'Loading existing weights at {tf.train.latest_checkpoint(checkpoint_path)}.')
+        print()
         vae.load_weights(tf.train.latest_checkpoint(checkpoint_path)).expect_partial()
 
+    # fit model
     vae.fit(
-        x=training_batch_generator, steps_per_epoch=steps_per_epoch, epochs=training_epochs,
-        validation_data=validation_batch_generator, validation_steps=validation_steps,
-        callbacks=[
-            model_checkpoint, tensorboard,
-            ShuffleData(X_train, shuffled_batch_dir, concatenated_batch_dir)
-        ],
-        verbose=1, use_multiprocessing=False
+        x=training_data_generator, steps_per_epoch=steps_per_epoch,
+        validation_data=validation_data_generator, validation_steps=validation_steps, 
+        epochs=training_epochs, callbacks=[model_checkpoint, tensorboard], verbose=1,
+        use_multiprocessing=False, workers=1
     )
 
     # encoder model statement
@@ -375,8 +282,6 @@ def TRAIN_VAE(config):
         # "You are passing KerasTensor(type_spec=TensorSpec(shape=()..." error
         # this fix is compatible with tensorflow 2.6.3
         # MUST COMMENT OUT TO DEBUG WITH MATPLOTLIB!!
-        
-        print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
 
         cellcutter_output_path = os.path.join(
             config.output_path, f'2_cellcutter_output_win{config.window_size}'
@@ -389,9 +294,6 @@ def TRAIN_VAE(config):
         save_dir = os.path.join(config.output_path, '5_train_vae')
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
-
-        shuffled_batch_dir = os.path.join(save_dir, 'shuffled_thumbnail_batches')
-        concatenated_batch_dir = os.path.join(save_dir, 'concatenated_shuffled_thumbnails')
 
         path_numbers = re.findall(r'\d+', cellcutter_output_path)
         window_size = [int(i) for i in path_numbers][-1]
@@ -410,56 +312,79 @@ def TRAIN_VAE(config):
         store = zarr.ZipStore(z1_validate_path, mode='r')
         X_valid = zarr.open(store=store)
 
-        #######################################################################
-
-        # hold a slice of data in memory for testing
-        # X_train = X_train[:, 0:10000, :, :]
-        # X_valid = X_valid[:, 0:10000, :, :]
-
-        #######################################################################
-
-        # read percent cutoffs selected in feature_preprocessing_selections()
+        # read percentile cutoffs selected in feature_preprocessing_selections.py
         with open(os.path.join(feature_preprocessing_path, 'cutoffs.pkl'), 'rb') as handle:
             percentile_cutoffs = pickle.load(handle)
 
-        # shuffle and augment training data before model training
-        augmented_multiplier = augment_and_shuffle_data(
-            X_train=X_train, shuffled_batch_dir=shuffled_batch_dir,
-            concatenated_batch_dir=concatenated_batch_dir
-        )
-        
         # compute steps per epoch for training data
-        steps_per_epoch = int(
-            np.ceil((X_train.shape[1] * augmented_multiplier) / config.batch_size)
-        )  
-        
+        steps_per_epoch = X_train.shape[1] // config.batch_size 
+
         # compute steps per epoch for validation data 
-        validation_steps = int(np.ceil(X_valid.shape[1] / config.batch_size))
+        validation_steps = X_valid.shape[1] // config.batch_size
 
-        # initialize batch generators
-        training_batch_generator = batch_generator(
-            X=None, batch_size=config.batch_size, steps=steps_per_epoch,
-            masked_model=config.masked_model, mask_std_dev=config.mask_std_dev,
-            percentile_cutoffs=percentile_cutoffs, concatenated_batch_dir=concatenated_batch_dir
-        )
-        validation_batch_generator = batch_generator(
-            X=X_valid, batch_size=config.batch_size, steps=validation_steps,
-            masked_model=config.masked_model, mask_std_dev=config.mask_std_dev, 
-            percentile_cutoffs=percentile_cutoffs, concatenated_batch_dir=concatenated_batch_dir
+        # compute vignette mask
+        mask, vmin, vmax = compute_vignette_mask(
+            window_size=config.window_size, std_dev=config.mask_std_dev
         )
 
-        build_and_fit_model(
-            X_train=X_train,
-            steps_per_epoch=steps_per_epoch,
-            X_valid=X_valid,
-            validation_steps=validation_steps,
-            img_shape=(X_train.shape[2], X_train.shape[3], X_train.shape[0]),
-            training_batch_generator=training_batch_generator,
-            validation_batch_generator=validation_batch_generator,
-            training_epochs=config.training_epochs,
-            latent_dimension=config.latent_dimension,
-            learning_rate=config.learning_rate,
-            shuffled_batch_dir=shuffled_batch_dir,
-            concatenated_batch_dir=concatenated_batch_dir,
-            save_dir=save_dir
+        # initialize training data generator
+        training_data_generator = DataGenerator(
+            name='train', zarr=X_train, batch_size=config.batch_size,
+            percentile_cutoffs=percentile_cutoffs, 
+            masked_model=config.masked_model, mask=mask, shuffle=True
         )
+
+        # initialize validation data generator
+        validation_data_generator = DataGenerator(
+            name='valid', zarr=X_valid, batch_size=config.batch_size,
+            percentile_cutoffs=percentile_cutoffs, 
+            masked_model=config.masked_model, mask=mask, shuffle=False
+        )
+
+        # def generator_to_tfdata(data_generator):
+        #     output_signature = tf.TensorSpec(
+        #         shape=(data_generator.batch_size,) + data_generator.dim, dtype=tf.float32
+        #     )
+        #     dataset = tf.data.Dataset.from_generator(
+        #         data_generator, output_signature=output_signature
+        #     )
+        #     return dataset.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
+
+        # tf_training_dataset = generator_to_tfdata(data_generator=training_data_generator)
+        # tf_validation_dataset = generator_to_tfdata(data_generator=validation_data_generator)
+        
+        print()
+        print('GPUs available: ', len(tf.config.list_physical_devices('GPU')))
+        print()
+        
+        # build model
+        if len(tf.config.list_physical_devices('GPU')) > 1:
+            
+            # use distributed GPU strategy
+            strategy = tf.distribute.MirroredStrategy() # this will use all available GPUs
+
+            with strategy.scope():
+                build_and_fit_model(
+                    img_shape=(X_train.shape[2], X_train.shape[3], X_train.shape[0]),
+                    latent_dimension=config.latent_dimension, 
+                    learning_rate=config.learning_rate,
+                    training_epochs=config.training_epochs,
+                    training_data_generator=training_data_generator,
+                    steps_per_epoch=steps_per_epoch, 
+                    validation_data_generator=validation_data_generator,
+                    validation_steps=validation_steps, 
+                    save_dir=save_dir
+                    )
+        
+        else:
+            build_and_fit_model(
+                img_shape=(X_train.shape[2], X_train.shape[3], X_train.shape[0]),
+                latent_dimension=config.latent_dimension, 
+                learning_rate=config.learning_rate,
+                training_epochs=config.training_epochs,
+                training_data_generator=training_data_generator,
+                steps_per_epoch=steps_per_epoch, 
+                validation_data_generator=validation_data_generator,
+                validation_steps=validation_steps, 
+                save_dir=save_dir
+                )

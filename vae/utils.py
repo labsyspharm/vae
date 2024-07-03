@@ -45,10 +45,8 @@ def clip_outlier_pixels(img_batch, percentile_cutoffs):
     return img_batch
 
 
-def compute_vignette_mask(img_batch, std_dev):
+def compute_vignette_mask(window_size, std_dev):
     """Compute a 2D Gaussian-distributed vignette mask to apply to image patches."""
-
-    window_size = img_batch.shape[1]
     
     # create a range spanning 3 STDs below and above a mean value of zero
     x = np.linspace(0 - 3 * std_dev, 0 + 3 * std_dev, 100)  

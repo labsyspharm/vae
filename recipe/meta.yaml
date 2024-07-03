@@ -35,7 +35,8 @@ requirements:
     - pyarrow
     - pyyaml
     - seaborn
-    - tensorflow=2.14.0  # avoiding "from tensorflow.keras import XX" errors with tf >= 2.16 and making compatible with available o2 GPU CUDA modules. 
+    - tensorflow=2.15.0  # avoiding "from tensorflow.keras import XX" errors with tf >= 2.16 and making compatible with available o2 GPU CUDA modules. 
+    - tensorflow-gpu
     - cellcutter
     - opencv
     - dask
