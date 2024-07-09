@@ -27,15 +27,15 @@ def GENERATE_CELLCUTTER_INPUT(config):
             raise ValueError(f'Note: extension type {extension} not supported.')
 
         # drop noisy cells from HDBSCAN clustering
-        csv = csv[csv['cluster_2d'] != -1]
+        csv = csv[csv['cluster_3d'] != -1]
 
         #######################################################################
 
         # calculate weighted random sample by cluster size (class balance)
-        groups = csv.groupby('cluster_2d')
+        groups = csv.groupby('cluster_3d')
         sample_weights = pd.DataFrame({'weights': 1 / (groups.size() * len(groups))})
         weights = pd.merge(
-            csv[['cluster_2d']], sample_weights, left_on='cluster_2d', right_index=True
+            csv[['cluster_3d']], sample_weights, left_on='cluster_3d', right_index=True
         )
 
         csv = csv.sample(
@@ -55,7 +55,7 @@ def GENERATE_CELLCUTTER_INPUT(config):
 
         print()
         print('Cells per cluster after cluster-weighted random sampling:')
-        print(csv.groupby('cluster_2d').size().sort_values(ascending=False))
+        print(csv.groupby('cluster_3d').size().sort_values(ascending=False))
 
         #######################################################################
 

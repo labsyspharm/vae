@@ -4,44 +4,40 @@ import sys
 import pickle
 import logging
 
-import random
 import datetime
 
 import numpy as np
 
 import zarr
-import dask.array as da
 
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.models import Model
-from tensorflow.keras.models import save_model
+from tensorflow.keras.models import save_model, load_model
 from tensorflow.keras import layers
 from tensorflow.keras import backend as K
-from tensorflow.keras.utils import Sequence
-# from tensorflow.python.keras.utils.data_utils import Sequence  # this only works with generator_to_tfdata, otherwise error: AttributeError: 'DataGenerator' object has no attribute 'shape'
+from tensorflow.keras.utils import Sequence  # works with generator
+# from tensorflow.python.keras.utils.data_utils import Sequence  # works with tf dataset
 from tensorflow.keras.optimizers import RMSprop
 from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard
-from tensorflow.python.framework.ops import disable_eager_execution
 
 from ..utils import (
-    log_banner, log_multiline, log_transform, clip_outlier_pixels, 
-    compute_vignette_mask, transposeZarr
+    log_banner, log_multiline, log_transform, clip_outlier_pixels, compute_vignette_mask
 )
 
 ##################################################################################################
 # to run this script interactively on HMS o2 GPU partition:
 
 # srun --pty -p gpu_quad -t 0-2:00 --gres=gpu:1 --mem=30G bash
-# <or>
-# srun --pty -p gpu -t 0-12:00 --gres=gpu:teslaV100:2 --mem=100G bash
+# srun --pty -p gpu -t 0-24:00 --gres=gpu:teslaV100:1 --mem=30G bash
 
 # scontrol show node "compute-g-17-152" (to see specs for node)
 # nvidia-smi (to see specs for the resourced GPU(s))
 
 # conda activate vae
 
-# module load gcc/9.2.0 python/3.10.11 cuda/12.1 (compatible with tensorflow=2.15.0 and teslaX100, Quadro RTX 8000, A100 GPUs)
+# module load gcc/9.2.0 python/3.10.11 cuda/12.1 
+# (compatible with tensorflow=2.15.0 and L40S, teslaX100, RTX8000, A100, and maybe other GPUs)
 
 # cd to VAE I/O directory
 
@@ -61,8 +57,9 @@ logger = logging.getLogger(__name__)
 class DataGenerator(Sequence):
     'generates data for Keras model fit'
     
-    def __init__(self, name, zarr, batch_size, 
-        percentile_cutoffs, masked_model, mask, shuffle=True):
+    def __init__(
+            self, name, zarr, batch_size, percentile_cutoffs, 
+            masked_model, mask, shuffle=True):
         'initialization'
         self.name = name
         self.zarr = zarr
@@ -90,7 +87,7 @@ class DataGenerator(Sequence):
         for i in range(self.__len__()):
             yield self.__getitem__(i)
             
-            if i == self.__len__()-1:
+            if i == self.__len__() - 1:
                 self.on_epoch_end()
     
     def on_epoch_end(self):
@@ -100,7 +97,7 @@ class DataGenerator(Sequence):
 
     def __data_generation(self, batch_indices):
         'yields data containing batch_size samples'
-        X = self.zarr[:, batch_indices, :, :].transpose([1, 2, 3, 0])
+        X = self.zarr.oindex[:, batch_indices, :, :].transpose([1, 2, 3, 0])
 
         # preprocess image patches
         X = clip_outlier_pixels(log_transform(X), self.percentile_cutoffs)
@@ -125,8 +122,24 @@ def rotate_batch(batch):
     num_images = batch.shape[0]
     rotation_angles = np.random.randint(0, 4, size=num_images)
     for i in range(num_images):
-        batch[i] = np.rot90(batch[i], rotation_angles[i], axes=(0,1))
+        batch[i] = np.rot90(batch[i], rotation_angles[i], axes=(0, 1))
     return batch
+
+
+def latest_keras_model_checkpoint(checkpoint_path):
+    # list all files in the checkpoint directory
+    checkpoints = [f for f in os.listdir(checkpoint_path) if f.endswith('.keras')]
+    
+    if not checkpoints:
+        raise ValueError("No checkpoints found in the directory.")
+    
+    # get the full path of each checkpoint
+    checkpoints = [os.path.join(checkpoint_path, f) for f in checkpoints]
+    
+    # sort checkpoints based on modification time
+    latest_checkpoint = max(checkpoints, key=os.path.getmtime)
+    
+    return latest_checkpoint
 
 
 def build_and_fit_model(img_shape, latent_dimension, learning_rate, training_epochs, training_data_generator, steps_per_epoch, validation_data_generator, validation_steps, save_dir):
@@ -194,9 +207,14 @@ def build_and_fit_model(img_shape, latent_dimension, learning_rate, training_epo
     z_decoded = decoder(z)
 
     # construct a custom layer to calculate the loss
+    
+    # Clear all previously registered custom objects
+    # keras.saving.get_custom_objects().clear()
+
+    @keras.saving.register_keras_serializable()
     class CustomVariationalLayer(keras.layers.Layer):
 
-        def vae_loss(self, x, z_decoded):
+        def vae_loss(self, x, z_decoded, z_mu, z_log_sigma):
             x = K.flatten(x)
             z_decoded = K.flatten(z_decoded)
             
@@ -214,17 +232,19 @@ def build_and_fit_model(img_shape, latent_dimension, learning_rate, training_epo
         def call(self, inputs):
             x = inputs[0]
             z_decoded = inputs[1]
-            loss = self.vae_loss(x, z_decoded)
+            z_mu = inputs[2]
+            z_log_sigma = inputs[3]
+            loss = self.vae_loss(x, z_decoded, z_mu, z_log_sigma)
             self.add_loss(loss, inputs=inputs)
             return x
 
     # apply the custom loss to the input images and the
     # decoded latent distribution sample
-    y = CustomVariationalLayer()([input_img, z_decoded])
+    y = CustomVariationalLayer()([input_img, z_decoded, z_mu, z_log_sigma])
 
     # VAE model statement
     vae = Model(input_img, y)
-    vae.compile(optimizer='rmsprop', loss=None)
+    vae.compile(optimizer='RMSprop', loss=None)
     vae.summary()
 
     # initialize tensorboard
@@ -238,27 +258,41 @@ def build_and_fit_model(img_shape, latent_dimension, learning_rate, training_epo
         'run tensorboard --logdir <path_to_tensorboard_fit>'
     )
     print()
-    
-    # initialize model checkpoint callback
-    checkpoint_path = f"{save_dir}/checkpoints"
-    model_checkpoint = ModelCheckpoint(
-        filepath=os.path.join(checkpoint_path, 'val_loss-{val_loss:.5f}-cp.ckpt'),
-        monitor='val_loss', verbose=1, save_best_only=True, save_weights_only=True,
-        initial_value_threshold=None
-    )
 
+    checkpoint_path = f"{save_dir}/checkpoints"
+    
     # load existing model
     if os.path.exists(checkpoint_path):
-        print(f'Loading existing weights at {tf.train.latest_checkpoint(checkpoint_path)}.')
+
+        latest_checkpoint = latest_keras_model_checkpoint(checkpoint_path=checkpoint_path)
+
+        print(f'Loading latest model at {latest_checkpoint}')
         print()
-        vae.load_weights(tf.train.latest_checkpoint(checkpoint_path)).expect_partial()
+        
+        # load latest model
+        vae = load_model(latest_checkpoint, compile=True, safe_mode=False) 
+        
+        # set initial_value_threshold
+        pattern = r'val_loss-(\d+\.\d+)-model\.keras'
+        match = re.search(pattern, latest_checkpoint)
+        initial_value_threshold = float(match.group(1))
+    
+    else:
+        initial_value_threshold = None
+
+    # initialize model checkpoint callback
+    model_checkpoint = ModelCheckpoint(
+        filepath=os.path.join(checkpoint_path, 'val_loss-{val_loss:.5f}-model.keras'),
+        monitor='val_loss', verbose=1, save_best_only=True, save_weights_only=False,
+        initial_value_threshold=initial_value_threshold
+    )
 
     # fit model
     vae.fit(
         x=training_data_generator, steps_per_epoch=steps_per_epoch,
         validation_data=validation_data_generator, validation_steps=validation_steps, 
-        epochs=training_epochs, callbacks=[model_checkpoint, tensorboard], verbose=1,
-        use_multiprocessing=False, workers=1
+        epochs=training_epochs, use_multiprocessing=False, workers=4, verbose=1,
+        callbacks=[model_checkpoint, tensorboard]  
     )
 
     # encoder model statement
@@ -276,12 +310,6 @@ def TRAIN_VAE(config):
         # clear backend, set random state seed
         K.clear_session()
         np.random.seed(237)
-        
-        disable_eager_execution()
-        # needed for keras.Model not to throw
-        # "You are passing KerasTensor(type_spec=TensorSpec(shape=()..." error
-        # this fix is compatible with tensorflow 2.6.3
-        # MUST COMMENT OUT TO DEBUG WITH MATPLOTLIB!!
 
         cellcutter_output_path = os.path.join(
             config.output_path, f'2_cellcutter_output_win{config.window_size}'
@@ -300,17 +328,21 @@ def TRAIN_VAE(config):
 
         # read training and validation thumbnails (16-bit unsigned integer format)
         z1_train_path = (
-            os.path.join(cellcutter_output_path, f"train_thumbnails_{window_size}.zip")
+            os.path.join(cellcutter_output_path, f'train_thumbnails_{window_size}.zip')
         )
         store = zarr.ZipStore(z1_train_path, mode='r')
         X_train = zarr.open(store=store)
-
+        # X_train = X_train[:, 0:1000, :, :]
+        # X_train = zarr.array(X_train, chunks=(21, 1, 62, 62), dtype=X_train.dtype)
+        
         # read validation thumbnails (16-bit unsigned integer format)
         z1_validate_path = (
-            os.path.join(cellcutter_output_path, f"validate_thumbnails_{window_size}.zip")
+            os.path.join(cellcutter_output_path, f'validate_thumbnails_{window_size}.zip')
         )
         store = zarr.ZipStore(z1_validate_path, mode='r')
         X_valid = zarr.open(store=store)
+        # X_valid = X_valid[:, 0:1000, :, :]
+        # X_valid = zarr.array(X_valid, chunks=(21, 1, 62, 62), dtype=X_valid.dtype)
 
         # read percentile cutoffs selected in feature_preprocessing_selections.py
         with open(os.path.join(feature_preprocessing_path, 'cutoffs.pkl'), 'rb') as handle:
@@ -328,6 +360,7 @@ def TRAIN_VAE(config):
         )
 
         # initialize training data generator
+        # (does not seem to work with multi-GPU processing)
         training_data_generator = DataGenerator(
             name='train', zarr=X_train, batch_size=config.batch_size,
             percentile_cutoffs=percentile_cutoffs, 
@@ -341,9 +374,11 @@ def TRAIN_VAE(config):
             masked_model=config.masked_model, mask=mask, shuffle=False
         )
 
+        # CONVERT BATCH GENERATOR TO TENSORFLOW DATASET
         # def generator_to_tfdata(data_generator):
         #     output_signature = tf.TensorSpec(
-        #         shape=(data_generator.batch_size,) + data_generator.dim, dtype=tf.float32
+        #         shape=(data_generator.batch_size,) + 
+        #         (X_train.shape[2], X_train.shape[3], X_train.shape[0]), dtype=tf.float32
         #     )
         #     dataset = tf.data.Dataset.from_generator(
         #         data_generator, output_signature=output_signature
@@ -361,7 +396,7 @@ def TRAIN_VAE(config):
         if len(tf.config.list_physical_devices('GPU')) > 1:
             
             # use distributed GPU strategy
-            strategy = tf.distribute.MirroredStrategy() # this will use all available GPUs
+            strategy = tf.distribute.MirroredStrategy()  # this will use all available GPUs
 
             with strategy.scope():
                 build_and_fit_model(
@@ -374,8 +409,7 @@ def TRAIN_VAE(config):
                     validation_data_generator=validation_data_generator,
                     validation_steps=validation_steps, 
                     save_dir=save_dir
-                    )
-        
+                )
         else:
             build_and_fit_model(
                 img_shape=(X_train.shape[2], X_train.shape[3], X_train.shape[0]),
@@ -387,4 +421,4 @@ def TRAIN_VAE(config):
                 validation_data_generator=validation_data_generator,
                 validation_steps=validation_steps, 
                 save_dir=save_dir
-                )
+            )

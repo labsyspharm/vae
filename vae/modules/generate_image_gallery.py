@@ -86,7 +86,7 @@ def PlotInputImgs(numExamples, numColumns, imgs, seg, intensity_multiplier, labe
 
         # overlay += seg_slice
 
-        label = row[1]['cluster_2d']
+        label = row[1]['cluster_3d']
 
         plt.imshow(overlay, cmap=plt.cm.binary)
         plt.xlabel(label, size=fontSize, labelpad=1.5)
@@ -146,7 +146,7 @@ def GENERATE_IMAGE_GALLERY(config):
 
         labels = labels.iloc[thumb_ids]
         labels.reset_index(drop=True, inplace=True)
-        labels.sort_values(by='cluster_2d', inplace=True)
+        labels.sort_values(by='cluster_3d', inplace=True)
 
         PlotInputImgs(
             numExamples=config.gallery_size,
