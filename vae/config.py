@@ -26,6 +26,7 @@ class Config:
         config.cells_per_chunk = int(data['cells_per_chunk'])
         config.gallery_size = int(data['gallery_size'])
         config.latent_dimension = int(data['latent_dimension'])
+        config.cutoffs = list(data['cutoffs'])
         config.batch_size = int(data['batch_size'])
         config.masked_model = bool(data['masked_model'])
         config.mask_std_dev = int(data['mask_std_dev'])

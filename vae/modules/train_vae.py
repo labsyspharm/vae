@@ -6,9 +6,11 @@ import logging
 
 import datetime
 
+import pandas as pd
 import numpy as np
 
 import zarr
+import dask.array as da
 
 import tensorflow as tf
 from tensorflow import keras
@@ -17,35 +19,37 @@ from tensorflow.keras.models import save_model, load_model
 from tensorflow.keras import layers
 from tensorflow.keras import backend as K
 from tensorflow.keras.utils import Sequence  # works with generator
-# from tensorflow.python.keras.utils.data_utils import Sequence  # works with tf dataset
+# from tensorflow.python.keras.utils.data_utils import Sequence  # tf dataset
 from tensorflow.keras.optimizers import RMSprop
 from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard
 
 from ..utils import (
-    log_banner, log_multiline, log_transform, clip_outlier_pixels, compute_vignette_mask
+    log_banner, log_multiline, log_transform, 
+    align_histograms, compute_vignette_mask
 )
 
-##################################################################################################
+###############################################################################
 # to run this script interactively on HMS o2 GPU partition:
 
-# srun --pty -p gpu_quad -t 0-2:00 --gres=gpu:1 --mem=30G bash
-# srun --pty -p gpu -t 0-24:00 --gres=gpu:teslaV100:1 --mem=30G bash
+# srun --pty -p gpu_requeue -t 0-24:00 --gres=gpu:1 --mem=100G bash
 
-# scontrol show node "compute-g-17-152" (to see specs for node)
+# scontrol show node compute-gc-17-152 (to see specs for node)
 # nvidia-smi (to see specs for the resourced GPU(s))
 
 # conda activate vae
 
 # module load gcc/9.2.0 python/3.10.11 cuda/12.1 
-# (compatible with tensorflow=2.15.0 and L40S, teslaX100, RTX8000, A100, and maybe other GPUs)
+# (compatible with tensorflow=2.15.0 and L40S, teslaX100, 
+#  RTX8000, A100, and maybe other GPUs)
 
 # cd to VAE I/O directory
 
 # vae --module TRAIN_VAE config.yml
+# requires tensorflow-gpu to be installed
 
 # to run this script with sbatch:
 # sh ~/scripts/vae/submit.sh
-##################################################################################################
+###############################################################################
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -58,13 +62,14 @@ class DataGenerator(Sequence):
     'generates data for Keras model fit'
     
     def __init__(
-            self, name, zarr, batch_size, percentile_cutoffs, 
+            self, name, zarr, y, batch_size, limits, 
             masked_model, mask, shuffle=True):
         'initialization'
         self.name = name
         self.zarr = zarr
+        self.y = y
         self.batch_size = batch_size
-        self.percentile_cutoffs = percentile_cutoffs
+        self.limits = limits
         self.masked_model = masked_model
         self.mask = mask
         self.shuffle = shuffle
@@ -98,9 +103,20 @@ class DataGenerator(Sequence):
     def __data_generation(self, batch_indices):
         'yields data containing batch_size samples'
         X = self.zarr.oindex[:, batch_indices, :, :].transpose([1, 2, 3, 0])
+        
+        # X = X.astype('float')  # use for binary patches
+        
+        X = da.from_array(X)
+  
+        labels = self.y[batch_indices]
+        dask_labels = da.from_array(labels.values, chunks=(X.chunksize[0],))
+        dask_labels = dask_labels.reshape((-1, 1, 1, 1))
 
         # preprocess image patches
-        X = clip_outlier_pixels(log_transform(X), self.percentile_cutoffs)
+        X = da.map_blocks(
+            align_histograms, X, 
+            dask_labels, self.limits, dtype=np.float32,
+        ).compute()
 
         # apply mask
         if self.masked_model:
@@ -128,7 +144,8 @@ def rotate_batch(batch):
 
 def latest_keras_model_checkpoint(checkpoint_path):
     # list all files in the checkpoint directory
-    checkpoints = [f for f in os.listdir(checkpoint_path) if f.endswith('.keras')]
+    checkpoints = [f for f in os.listdir(checkpoint_path) if 
+                   f.endswith('.keras')]
     
     if not checkpoints:
         raise ValueError("No checkpoints found in the directory.")
@@ -149,16 +166,23 @@ def build_and_fit_model(img_shape, latent_dimension, learning_rate, training_epo
 
     RMSprop(learning_rate=learning_rate)
 
-    x = layers.Conv2D(filters=32, kernel_size=3, padding='same', activation='relu')(input_img)
     x = layers.Conv2D(
-        filters=64, kernel_size=3, padding='same', activation='relu', strides=(2, 2)
+        filters=32, kernel_size=3, padding='same', activation='relu'
+    )(input_img)
+    x = layers.Conv2D(
+        filters=64, kernel_size=3, padding='same', activation='relu', 
+        strides=(2, 2)
     )(x)
-    x = layers.Conv2D(filters=64, kernel_size=3, padding='same', activation='relu')(x)
+    x = layers.Conv2D(
+        filters=64, kernel_size=3, padding='same', activation='relu'
+    )(x)
 
     # MAX POOL
     # x = layers.MaxPooling2D(pool_size=(2, 2), strides=2, padding='valid')(x)
 
-    x = layers.Conv2D(filters=64, kernel_size=3, padding='same', activation='relu')(x)
+    x = layers.Conv2D(
+        filters=64, kernel_size=3, padding='same', activation='relu'
+    )(x)
 
     # need to know the shape of the network here for the decoder
     shape_before_flattening = K.int_shape(x)
@@ -187,17 +211,21 @@ def build_and_fit_model(img_shape, latent_dimension, learning_rate, training_epo
     decoder_input = layers.Input(K.int_shape(z)[1:])
 
     # expand to N total pixels
-    x = layers.Dense(np.prod(shape_before_flattening[1:]), activation='relu')(decoder_input)
+    x = layers.Dense(
+        np.prod(shape_before_flattening[1:]), activation='relu'
+    )(decoder_input)
 
     # reshape
     x = layers.Reshape(shape_before_flattening[1:])(x)
 
     # use Conv2DTranspose to reverse the conv layers from the encoder
     x = layers.Conv2DTranspose(
-        filters=32, kernel_size=3, padding='same', activation='relu', strides=(2, 2)
+        filters=32, kernel_size=3, padding='same', activation='relu', 
+        strides=(2, 2)
     )(x)
     x = layers.Conv2D(
-        filters=img_shape[2], kernel_size=3, padding='same', activation='sigmoid'
+        filters=img_shape[2], kernel_size=3, padding='same', 
+        activation='sigmoid'
     )(x)
 
     # decoder model statement
@@ -207,10 +235,6 @@ def build_and_fit_model(img_shape, latent_dimension, learning_rate, training_epo
     z_decoded = decoder(z)
 
     # construct a custom layer to calculate the loss
-    
-    # Clear all previously registered custom objects
-    # keras.saving.get_custom_objects().clear()
-
     @keras.saving.register_keras_serializable()
     class CustomVariationalLayer(keras.layers.Layer):
 
@@ -254,7 +278,8 @@ def build_and_fit_model(img_shape, latent_dimension, learning_rate, training_epo
     )
     tensorboard = TensorBoard(log_dir=log_dir, histogram_freq=0)
     logger.info(
-        'To monitor model training: Open new terminal window, step into VAE virtual environment, '
+        'To monitor model training: Open new terminal window, '
+        'step into VAE virtual environment, '
         'run tensorboard --logdir <path_to_tensorboard_fit>'
     )
     print()
@@ -264,8 +289,16 @@ def build_and_fit_model(img_shape, latent_dimension, learning_rate, training_epo
     # load existing model
     if os.path.exists(checkpoint_path):
 
-        latest_checkpoint = latest_keras_model_checkpoint(checkpoint_path=checkpoint_path)
+        latest_checkpoint = latest_keras_model_checkpoint(
+            checkpoint_path=checkpoint_path
+        )
 
+        # load an arbitrary model (optional)
+        latest_checkpoint = (
+            '/n/scratch/users/g/gjb15/binary_patches/'
+            '5_train_vae/checkpoints/val_loss-0.00412-model.keras'
+        )
+        
         print(f'Loading latest model at {latest_checkpoint}')
         print()
         
@@ -282,30 +315,53 @@ def build_and_fit_model(img_shape, latent_dimension, learning_rate, training_epo
 
     # initialize model checkpoint callback
     model_checkpoint = ModelCheckpoint(
-        filepath=os.path.join(checkpoint_path, 'val_loss-{val_loss:.5f}-model.keras'),
-        monitor='val_loss', verbose=1, save_best_only=True, save_weights_only=False,
+        filepath=os.path.join(
+            checkpoint_path, 'val_loss-{val_loss:.5f}-model.keras'),
+        monitor='val_loss', verbose=1, save_best_only=True, 
+        save_weights_only=False, 
         initial_value_threshold=initial_value_threshold
     )
 
     # fit model
     vae.fit(
         x=training_data_generator, steps_per_epoch=steps_per_epoch,
-        validation_data=validation_data_generator, validation_steps=validation_steps, 
-        epochs=training_epochs, use_multiprocessing=False, workers=4, verbose=1,
+        validation_data=validation_data_generator, 
+        validation_steps=validation_steps, epochs=training_epochs, 
+        use_multiprocessing=False, workers=4, verbose=1, 
         callbacks=[model_checkpoint, tensorboard]  
     )
 
-    # encoder model statement
-    encoder = Model(input_img, z_mu)
+    if os.path.exists(checkpoint_path):
+        
+        # encoder model statement
+        encoder_input = vae.input
+        encoder_output = vae.get_layer('z_mu').output
+        encoder = Model(encoder_input, encoder_output)
+
+        # extract decoder from vae model
+        decoder = vae.get_layer('model')
+
+    else:
+        # encoder model statement
+        encoder = Model(input_img, z_mu)
+
+        # decoder model statement is specified in VAE built above in this case
 
     # save the encoder and decoder models after training
-    save_model(encoder, f'{save_dir}/encoder.hdf5', overwrite=True, include_optimizer=True)
-    save_model(decoder, f'{save_dir}/decoder.hdf5', overwrite=True, include_optimizer=True)
+    save_model(
+        encoder, f'{save_dir}/encoder.hdf5', overwrite=True, 
+        include_optimizer=True
+    )
+    save_model(
+        decoder, f'{save_dir}/decoder.hdf5', overwrite=True, 
+        include_optimizer=True
+    )
 
 
 def TRAIN_VAE(config):
 
-    if not os.path.isfile(os.path.join(config.output_path, 'checkpoints/TRAIN_VAE.txt')):
+    if not os.path.isfile(
+      os.path.join(config.output_path, 'checkpoints/TRAIN_VAE.txt')):
 
         # clear backend, set random state seed
         K.clear_session()
@@ -315,8 +371,8 @@ def TRAIN_VAE(config):
             config.output_path, f'2_cellcutter_output_win{config.window_size}'
         )
 
-        feature_preprocessing_path = os.path.join(
-            config.output_path, '4_feature_preprocessing_selections'
+        histogram_alignment_path = os.path.join(
+            config.output_path, '4_histogram_alignment'
         )
 
         save_dir = os.path.join(config.output_path, '5_train_vae')
@@ -326,27 +382,48 @@ def TRAIN_VAE(config):
         path_numbers = re.findall(r'\d+', cellcutter_output_path)
         window_size = [int(i) for i in path_numbers][-1]
 
-        # read training and validation thumbnails (16-bit unsigned integer format)
+        # read training and validation thumbnails (16-bit unsigned integers)
         z1_train_path = (
-            os.path.join(cellcutter_output_path, f'train_thumbnails_{window_size}.zip')
+            os.path.join(cellcutter_output_path, 
+                         f'train_thumbnails_{window_size}.zip')
         )
         store = zarr.ZipStore(z1_train_path, mode='r')
         X_train = zarr.open(store=store)
         # X_train = X_train[:, 0:1000, :, :]
-        # X_train = zarr.array(X_train, chunks=(21, 1, 62, 62), dtype=X_train.dtype)
+        # X_train = zarr.array(
+        #     X_train, chunks=(21, 1, 62, 62), dtype=X_train.dtype
+        # )
         
-        # read validation thumbnails (16-bit unsigned integer format)
+        # read validation thumbnails (16-bit unsigned integers)
         z1_validate_path = (
-            os.path.join(cellcutter_output_path, f'validate_thumbnails_{window_size}.zip')
+            os.path.join(cellcutter_output_path, 
+                         f'validate_thumbnails_{window_size}.zip')
         )
         store = zarr.ZipStore(z1_validate_path, mode='r')
         X_valid = zarr.open(store=store)
         # X_valid = X_valid[:, 0:1000, :, :]
-        # X_valid = zarr.array(X_valid, chunks=(21, 1, 62, 62), dtype=X_valid.dtype)
+        # X_valid = zarr.array(
+        #     X_valid, chunks=(21, 1, 62, 62), dtype=X_valid.dtype
+        # )
 
-        # read percentile cutoffs selected in feature_preprocessing_selections.py
-        with open(os.path.join(feature_preprocessing_path, 'cutoffs.pkl'), 'rb') as handle:
-            percentile_cutoffs = pickle.load(handle)
+        # read training labels
+        y_train = pd.read_csv(
+            os.path.join(config.output_path, '1_cellcutter_input/train.csv')
+        )
+        y_train = y_train['Sample']
+        
+        # read validation labels
+        y_validate = pd.read_csv(
+            os.path.join(config.output_path, '1_cellcutter_input/validate.csv')
+        )
+        y_validate = y_validate['Sample']
+
+        # read histogram scaling functions computed in align_histograms.py
+        with open(
+          os.path.join(
+           histogram_alignment_path, 
+           'limits.pkl'), 'rb') as handle:
+            limits = pickle.load(handle)
 
         # compute steps per epoch for training data
         steps_per_epoch = X_train.shape[1] // config.batch_size 
@@ -362,15 +439,15 @@ def TRAIN_VAE(config):
         # initialize training data generator
         # (does not seem to work with multi-GPU processing)
         training_data_generator = DataGenerator(
-            name='train', zarr=X_train, batch_size=config.batch_size,
-            percentile_cutoffs=percentile_cutoffs, 
+            name='train', zarr=X_train, y=y_train, 
+            batch_size=config.batch_size, limits=limits, 
             masked_model=config.masked_model, mask=mask, shuffle=True
         )
 
         # initialize validation data generator
         validation_data_generator = DataGenerator(
-            name='valid', zarr=X_valid, batch_size=config.batch_size,
-            percentile_cutoffs=percentile_cutoffs, 
+            name='valid', zarr=X_valid, y=y_validate, 
+            batch_size=config.batch_size, limits=limits, 
             masked_model=config.masked_model, mask=mask, shuffle=False
         )
 
@@ -396,11 +473,12 @@ def TRAIN_VAE(config):
         if len(tf.config.list_physical_devices('GPU')) > 1:
             
             # use distributed GPU strategy
-            strategy = tf.distribute.MirroredStrategy()  # this will use all available GPUs
+            strategy = tf.distribute.MirroredStrategy()  # use all GPUs
 
             with strategy.scope():
                 build_and_fit_model(
-                    img_shape=(X_train.shape[2], X_train.shape[3], X_train.shape[0]),
+                    img_shape=(X_train.shape[2], X_train.shape[3], 
+                               X_train.shape[0]),
                     latent_dimension=config.latent_dimension, 
                     learning_rate=config.learning_rate,
                     training_epochs=config.training_epochs,
@@ -412,7 +490,8 @@ def TRAIN_VAE(config):
                 )
         else:
             build_and_fit_model(
-                img_shape=(X_train.shape[2], X_train.shape[3], X_train.shape[0]),
+                img_shape=(X_train.shape[2], X_train.shape[3], 
+                           X_train.shape[0]),
                 latent_dimension=config.latent_dimension, 
                 learning_rate=config.learning_rate,
                 training_epochs=config.training_epochs,

@@ -57,12 +57,15 @@ def PlotInputImgs(numExamples, numColumns, imgs, seg, intensity_multiplier, labe
 
             lyr = imgs[ch, row[0], :, :]
 
+            # lyr = lyr.astype('float') # use for binary patches
+            
             lyr = img_as_float(lyr)
 
             # apply image contrast settings
             lyr -= (contrast_limits[name][0] / 65535)
             lyr /= (
-                (contrast_limits[name][1] / 65535) - (contrast_limits[name][0] / 65535))
+                (contrast_limits[name][1] / 65535) - 
+                (contrast_limits[name][0] / 65535))
 
             lyr = np.clip(lyr, 0, 1)
 
@@ -96,16 +99,22 @@ def PlotInputImgs(numExamples, numColumns, imgs, seg, intensity_multiplier, labe
         legend_elements.append(Line2D([0], [0], color=color, lw=5, label=name))
 
     fig.legend(
-        handles=legend_elements, prop={'size': 11}, bbox_to_anchor=(0.94, 0.99))
+        handles=legend_elements, prop={'size': 11}, 
+        bbox_to_anchor=(0.94, 0.99)
+    )
 
     plt.subplots_adjust(bottom=0.01, top=0.99, left=0.01, right=0.85)
-    plt.savefig(os.path.join(save_dir, f'{fileName}.png'), dpi=800, bbox_inches='tight')
+    plt.savefig(
+        os.path.join(save_dir, f'{fileName}.png'), dpi=800, bbox_inches='tight'
+    )
     plt.close('all')
 
 
 def GENERATE_IMAGE_GALLERY(config):
 
-    cellcutter_input_path = os.path.join(config.output_path, '1_cellcutter_input')
+    cellcutter_input_path = os.path.join(
+        config.output_path, '1_cellcutter_input'
+    )
 
     cellcutter_output_path = os.path.join(
         config.output_path, f'2_cellcutter_output_win{config.window_size}'
@@ -114,6 +123,10 @@ def GENERATE_IMAGE_GALLERY(config):
     save_dir = os.path.join(config.output_path, '3_thumbnail_examples')
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
+
+    if not os.path.exists(
+      os.path.join(config.output_path, 
+                   'checkpoints/GENERATE_IMAGE_GALLERY.txt')):
 
         # read training labels
         labels_path = os.path.join(cellcutter_input_path, 'test.csv')
@@ -128,7 +141,8 @@ def GENERATE_IMAGE_GALLERY(config):
 
         # read segmentation thumbnails for test data (16-bit unsigned integer)
         z1_test_path_seg = os.path.join(
-            cellcutter_output_path, f'test_thumbnails_{config.window_size}_seg.zip'
+            cellcutter_output_path, 
+            f'test_thumbnails_{config.window_size}_seg.zip'
         )
         store = zarr.ZipStore(z1_test_path_seg, mode='r')
         z_seg = zarr.open(store=store)

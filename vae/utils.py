@@ -36,13 +36,77 @@ def log_transform(img_batch):
 def clip_outlier_pixels(img_batch, percentile_cutoffs):
     """Clip lower and upper percentile outliers to 0 or 1, respectively
     based on pixel intensities of whole image."""
+
+    # for multi-tissue analysis
+    # extract percentile cutoffs for all labels in batch
+    # pc_min = np.array(
+    #     [list(percentile_cutoffs[label].values()) for label in labels], np.float32
+    # )[:, :, 0] 
+    # pc_max = np.array(
+    #     [list(percentile_cutoffs[label].values()) for label in labels], np.float32
+    # )[:, :, 1]
     
+    # # clip and normalize each image in the batch on a global per channel basis 
+    # img_batch = np.clip(
+    #     (img_batch - pc_min[:, None, None, :]) / 
+    #     (pc_max[:, None, None, :] - pc_min[:, None, None, :]), 0, 1)
+    
+    # for single tissue analysis
     pc = np.array(list(percentile_cutoffs.values()), np.float32)
     pc_min = pc[:, 0]
     pc_max = pc[:, 1]
     img_batch = np.clip((img_batch - pc_min) / (pc_max - pc_min), 0, 1)
 
     return img_batch
+
+
+def apply_scaling(flat_patch, scaling_funcs, sample, sample_keys):
+    for j, key in enumerate(sample_keys):
+        scaling_function = scaling_funcs[key][('gmm_peak1', 'mp99.95')]
+        flat_patch[:, j] = scaling_function(flat_patch[:, j])
+    return flat_patch
+
+
+def align_histograms(X_block, labels_block, limits):
+    """Apply linear polynomial image channel transformations computed 
+   in align_histograms.py to a batch of image patches block-wise and clip
+   channels to ensure 0-1 normalization."""
+
+    # flat_patches = X_block.reshape(X_block.shape[0], -1, X_block.shape[-1])
+    # for i, sample in enumerate(labels_block):
+    #     func_keys = [k for k in scaling_funcs.keys() 
+    #                  if k[0] == sample.item()]
+    #     # assuming scaling_funcs keys are in same order as patch channels 
+    #     for j, key in enumerate(func_keys):
+    #         scaling_function = scaling_funcs[key][('gmm_peak1', 'mp99.95')]
+    #         flat_patches[i, :, j] = scaling_function(flat_patches[i, :, j])
+    # X_block_transformed = flat_patches.reshape(X_block.shape)
+    # return np.clip(X_block_transformed, 0, 1)
+    
+    X_block = X_block.astype('float32')
+    sample_keys = {sample: [] for sample in np.unique(labels_block.ravel())}
+    for key in limits.keys():
+        if key[0] in sample_keys.keys():
+            sample_keys[key[0]].append(key)
+    num_samples, _, _, num_channels = X_block.shape
+    mins = np.empty((num_samples, num_channels), dtype='float32')
+    maxs = np.empty((num_samples, num_channels), dtype='float32')
+    for i, sample in enumerate(labels_block.ravel()):
+        for j, key in enumerate(sample_keys[sample]):
+            min_val = limits[key]
+            mins[i, j] = min_val
+            maxs[i, j] = 65535
+    mins = mins.reshape(num_samples, 1, 1, num_channels)
+    maxs = maxs.reshape(num_samples, 1, 1, num_channels)
+    X_block = log_transform(X_block)
+    log_mins = np.log10(mins + 1)
+    log_maxs = np.log10(maxs + 1)
+    range_vals = log_maxs - log_mins
+    mask = X_block > log_mins
+    scaled_values = (X_block - log_mins) / range_vals
+    X_block = np.where(mask, scaled_values, 0)
+    X_block = np.clip(X_block, 0, 1)
+    return X_block
 
 
 def compute_vignette_mask(window_size, std_dev):

@@ -27,6 +27,7 @@ from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 from skimage.color import gray2rgb
 
 import zarr
+import dask.array as da
 
 from keras.models import load_model
 
@@ -37,8 +38,9 @@ from sklearn.manifold import TSNE
 from joblib import Memory
 
 from ..utils import (
-    log_banner, log_multiline, log_transform, clip_outlier_pixels, 
-    compute_vignette_mask, transposeZarr, reverse_processing
+    log_banner, log_multiline, log_transform, 
+    align_histograms, clip_outlier_pixels, compute_vignette_mask, 
+    transposeZarr, reverse_processing
 )
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
@@ -172,40 +174,46 @@ def PlotLatentSpace(reconstructions, zoom, X_encoded_embedded, X_decoded, y, cha
             if not trim == 0:
                 palette = palette[:-trim]
 
-            label_color_dict = dict(zip(sorted(np.unique(y)), palette))
+            label_color_dict = dict(
+                zip(sorted(np.unique(y)), palette)
+            )
             c = [label_color_dict[i] for i in y]
 
             legend_elements = []
             for lbl, color in label_color_dict.items():
 
                 legend_elements.append(
-                    Line2D([0], [0], marker='o', color='w', label=lbl, markerfacecolor=color,
-                           markeredgecolor='k', lw=0.25, markersize=7)
+                    Line2D([0], [0], marker='o', color='w', label=lbl, 
+                           markerfacecolor=color, markeredgecolor=None,
+                           lw=0.25, markersize=9)
                 )
-            
-            fig, ax = plt.subplots()
+
             ax.scatter(
                 X_encoded_embedded[:, 0], X_encoded_embedded[:, 1],
                 c=c, ec='k', lw=0.0, s=scatter_point_size
             )
-            # ax.set_facecolor('#f4f4f4')
-            ax.set_axisbelow(True)
-            ax.grid(True, lw=1)
+
+            ax.set_aspect('equal')
+            ax.grid(False)
 
             plt.legend(
-                handles=legend_elements, fontsize=9.2, labelspacing=0.005, 
-                bbox_to_anchor=(1.15, 1.01)
+                handles=legend_elements, labelspacing=0.15, 
+                bbox_to_anchor=(1.1, 1.0)
             )
         else:
             # segmentation-based Leiden clustering
             # build cmap
             cmap = categorical_cmap(
-                numUniqueSamples=len(y.unique()), numCatagories=10, cmap='tab10', continuous=False
+                numUniqueSamples=len(y['VAE9_VIG7'].unique()), 
+                numCatagories=10, cmap='tab10', continuous=False
             )
 
-            label_color_dict = dict(zip(natsorted(y.unique()), [tuple(i) for i in cmap.colors]))
+            label_color_dict = dict(
+                zip(natsorted(y['VAE9_VIG7'].unique()), 
+                    [tuple(i) for i in cmap.colors])
+            )
 
-            if -1 in y.unique():
+            if -1 in y['VAE9_VIG7'].unique():
                 # make black the first color to specify
                 # cluster outliers (i.e. cluster -1 cells)
                 cmap = ListedColormap(
@@ -216,32 +224,38 @@ def PlotLatentSpace(reconstructions, zoom, X_encoded_embedded, X_decoded, y, cha
                 # trim qualitative cmap to number of unique samples
                 cmap = ListedColormap(cmap.colors[:-1])
 
-            hue_dict = dict(zip(natsorted(y.unique()), list(range(len(y.unique())))))
+            hue_dict = dict(
+                zip(natsorted(y['VAE9_VIG7'].unique()), 
+                    list(range(len(y['VAE9_VIG7'].unique()))))
+            )
 
-            c = [hue_dict[i] for i in y]
+            c = [hue_dict[i] for i in y['VAE9_VIG7']]
 
             plt.scatter(
-                X_encoded_embedded[:, 0], X_encoded_embedded[:, 1], c=c, cmap=cmap, ec='k',
-                lw=0.0, s=scatter_point_size
+                X_encoded_embedded[:, 0], X_encoded_embedded[:, 1], 
+                c=c, cmap=cmap, ec='k', lw=0.0, s=scatter_point_size 
+                # y['size']
             )
 
             legend_elements = []
-            for e, i in enumerate(natsorted(y.unique())):
+            for e, i in enumerate(natsorted(y['VAE9_VIG7'].unique())):
 
                 legend_elements.append(
                     Line2D([0], [0], marker='o', color='w', label=i,
-                           markerfacecolor=cmap.colors[e], markeredgecolor='k',
-                           lw=0.25, markersize=9)
+                           markerfacecolor=cmap.colors[e], 
+                           markeredgecolor=None, lw=0.25, markersize=9)
                 )
 
-            plt.legend(handles=legend_elements, labelspacing=0.15, bbox_to_anchor=(1.16, 1.0))
+            plt.legend(
+                handles=legend_elements, labelspacing=0.15, 
+                bbox_to_anchor=(1.16, 1.0)
+            )
 
             plt.grid(False)
             ax.set_aspect('equal')
         
         plt.tight_layout()
-        # plt.savefig(os.path.join(save_dir, f'{filename}.png'), dpi=800)
-        plt.savefig(os.path.join(save_dir, f'{filename}.pdf'))
+        plt.savefig(os.path.join(save_dir, f'{filename}.png'), dpi=800)
         plt.close('all')
 
         return label_color_dict
@@ -336,18 +350,18 @@ def InterpolationGrid(orig_input_dims, grid_size, X_encoded, y, decoder, label_c
 
     if make_sample_sizes_equal is True:
         lengths_list = []
-        for i in scatter_df['cluster_2d'].unique():
+        for i in scatter_df['cluster_3d'].unique():
 
-            lengths_list.append(len(scatter_df[scatter_df['cluster_2d'] == i]))
+            lengths_list.append(len(scatter_df[scatter_df['cluster_3d'] == i]))
 
         sample_size = min(lengths_list)
 
         sample_dfs = []
-        for j in scatter_df['cluster_2d'].unique():
-            if len(scatter_df[scatter_df['cluster_2d'] == j]) != sample_size:
-                sample_dfs.append(scatter_df[scatter_df['cluster_2d'] == j].sample(n=sample_size))
+        for j in scatter_df['cluster_3d'].unique():
+            if len(scatter_df[scatter_df['cluster_3d'] == j]) != sample_size:
+                sample_dfs.append(scatter_df[scatter_df['cluster_3d'] == j].sample(n=sample_size))
             else:
-                sample_dfs.append(scatter_df[scatter_df['cluster_2d'] == j])
+                sample_dfs.append(scatter_df[scatter_df['cluster_3d'] == j])
 
         scatter_df = pd.concat(sample_dfs, axis=0)
     else:
@@ -385,14 +399,14 @@ def InterpolationGrid(orig_input_dims, grid_size, X_encoded, y, decoder, label_c
     )
 
     # plot latent vectors for images
-    for i in natsorted(scatter_points['cluster_2d'].unique()):
+    for i in natsorted(scatter_points['cluster_3d'].unique()):
 
         ax.scatter(
-            scatter_points[0][scatter_points['cluster_2d'] == i],
-            scatter_points[1][scatter_points['cluster_2d'] == i],
+            scatter_points[0][scatter_points['cluster_3d'] == i],
+            scatter_points[1][scatter_points['cluster_3d'] == i],
             fc=[
-                label_color_dict[i] for i in scatter_points['cluster_2d'][
-                    scatter_points['cluster_2d'] == i]],
+                label_color_dict[i] for i in scatter_points['cluster_3d'][
+                    scatter_points['cluster_3d'] == i]],
             marker='o', label=i, s=scatter_point_size, ec='k', lw=0.25, alpha=scatter_point_alpha
         )
 
@@ -487,7 +501,7 @@ def LassoVectors(decoder, clustering_labels, percentile_cutoffs, contrast_limits
 
     if all(y == clustering_labels):
         y_df = pd.DataFrame(clustering_labels)
-        y_df.rename(columns={0: 'cluster_2d'}, inplace=True)
+        y_df.rename(columns={0: 'cluster_3d'}, inplace=True)
     else:
         y_df = y
 
@@ -550,7 +564,7 @@ def LassoVectors(decoder, clustering_labels, percentile_cutoffs, contrast_limits
                 )
         else:
 
-            c = [label_color_dict[i] for i in data['cluster_2d']]
+            c = [label_color_dict[i] for i in data['cluster_3d']]
 
             legend_elements = []
             for name, color in label_color_dict.items():
@@ -600,7 +614,7 @@ def LassoVectors(decoder, clustering_labels, percentile_cutoffs, contrast_limits
         selected_vectors = selected_vectors.sample(
             n=max_examples, random_state=44)
 
-    selected_vectors.sort_values(by='cluster_2d', inplace=True)
+    selected_vectors.sort_values(by='cluster_3d', inplace=True)
     # selected_vectors.sort_index(inplace=True)  # sort by row index for efficient indexing
     X_seg = X_seg[selected_vectors.index] 
 
@@ -724,7 +738,7 @@ def LassoVectors(decoder, clustering_labels, percentile_cutoffs, contrast_limits
 
             ax.imshow(overlay, cmap=plt.cm.binary)
 
-            ax.set_xlabel(row[1]['cluster_2d'], fontsize=thumbnail_font_size, labelpad=0.75)
+            ax.set_xlabel(row[1]['cluster_3d'], fontsize=thumbnail_font_size, labelpad=0.75)
             fig.add_subplot(ax)
 
     fig.subplots_adjust(bottom=0.01, top=0.94, left=0.01, right=0.85, wspace=0.2, hspace=0.1)
@@ -932,15 +946,36 @@ def categorical_cmap(numUniqueSamples, numCatagories, cmap='tab10', continuous=F
         ]
         ccolors = [ccolors[i] for i in myorder]
 
+        # for multi-tissue analysis
+        # ccolors[0] = np.array([0.12156862745098039, 0.4666666666666667, 0.7058823529411765])
+        # ccolors[1] = np.array([1.0, 0.4980392156862745, 0.054901960784313725])
+        # ccolors[2] = np.array([0.17254901960784313, 0.6274509803921569, 0.17254901960784313])
+
+        # for binary patch analysis
+        ccolors[0] = np.array([0.122, 0.467, 0.706])
+        ccolors[1] = np.array([0.682, 0.780, 0.910])
+        ccolors[2] = np.array([1.00, 0.733, 0.471])
+        ccolors[3] = np.array([0.598, 0.875, 0.543])
+        ccolors[4] = np.array([0.839, 0.153, 0.157])
+        ccolors[5] = np.array([0.0, 0.0, 0.0])
+
+        # ccolors[0] = np.array([1.0, 1.0, 1.0])
+        # ccolors[1] = np.array([1.0, 1.0, 1.0])
+        # ccolors[2] = np.array([1.0, 1.0, 1.0])
+        # ccolors[3] = np.array([1.0, 1.0, 1.0])
+        # ccolors[4] = np.array([0.839, 0.153, 0.157])
+        # ccolors[5] = np.array([1.0, 1.0, 1.0])
+        
+        # regular palette
         # use Okabe and Ito color-safe palette for first 6 colors
         # ccolors[0] = np.array([0.91, 0.29, 0.235]) #E84A3C
         # ccolors[1] = np.array([0.18, 0.16, 0.15]) #2E2926
-        ccolors[0] = np.array([0.0, 0.447, 0.698, 1.0])  # blue
-        ccolors[1] = np.array([0.902, 0.624, 0.0, 1.0])  # orange
-        ccolors[2] = np.array([0.0, 0.620, 0.451, 1.0])  # bluish green
-        ccolors[3] = np.array([0.8, 0.475, 0.655, 1.0])  # reddish purple
-        ccolors[4] = np.array([0.941, 0.894, 0.259, 1.0])  # yellow
-        ccolors[5] = np.array([0.835, 0.369, 0.0, 1.0])  # vermillion
+        # ccolors[0] = np.array([0.0, 0.447, 0.698, 1.0])  # blue
+        # ccolors[1] = np.array([0.902, 0.624, 0.0, 1.0])  # orange
+        # ccolors[2] = np.array([0.0, 0.620, 0.451, 1.0])  # bluish green
+        # ccolors[3] = np.array([0.8, 0.475, 0.655, 1.0])  # reddish purple
+        # ccolors[4] = np.array([0.941, 0.894, 0.259, 1.0])  # yellow
+        # ccolors[5] = np.array([0.835, 0.369, 0.0, 1.0])  # vermillion
 
     cols = np.zeros((numCatagories * numSubcatagories, 3))
     for i, c in enumerate(ccolors):
@@ -963,14 +998,20 @@ def categorical_cmap(numUniqueSamples, numCatagories, cmap='tab10', continuous=F
 
 def ENCODE_IMAGES(config):
 
-    training_thumb_dims = (config.window_size, config.window_size, len(config.tif_channels))
+    training_thumb_dims = (
+        config.window_size, config.window_size, len(config.tif_channels)
+    )
 
+    # read histogram scaling functions computed in align_histograms.py
     with open(
-        os.path.join(config.output_path, '4_feature_preprocessing_selections/cutoffs.pkl'),
-         'rb') as handle:
-        percentile_cutoffs = pickle.load(handle)
+      os.path.join(
+       config.output_path, 
+       '4_histogram_alignment/limits.pkl'), 'rb') as handle:
+        limits = pickle.load(handle)
 
-    save_dir = os.path.join(config.output_path, f'6_latent_space_LD{config.latent_dimension}')
+    save_dir = os.path.join(
+        config.output_path, f'6_latent_space_LD{config.latent_dimension}'
+    )
     if not os.path.exists(save_dir):
         os.mkdir(save_dir)
 
@@ -978,13 +1019,17 @@ def ENCODE_IMAGES(config):
 
     # load previously saved encoder and decoders
     try:
-        encoder = load_model(os.path.join(config.output_path, '5_train_vae/encoder.hdf5'))
+        encoder = load_model(
+            os.path.join(config.output_path, '5_train_vae/encoder.hdf5')
+        )
     except OSError:
         print('Encoder not found.')
         sys.exit()
 
     try:
-        decoder = load_model(os.path.join(config.output_path, '5_train_vae/decoder.hdf5'))
+        decoder = load_model(
+            os.path.join(config.output_path, '5_train_vae/decoder.hdf5')
+        )
     except OSError:
         print('Decoder not found.')
         sys.exit()
@@ -998,6 +1043,7 @@ def ENCODE_IMAGES(config):
         os.makedirs(combo_dir)
 
         print('Combined data does not exist, creating...')
+        print()
         
         # read training thumbnails (16-bit unsigned integer format)
         z1_train_path = os.path.join(
@@ -1027,11 +1073,17 @@ def ENCODE_IMAGES(config):
         X_test = zarr.open(store=store)
 
         # initialize combo zarr to store combined train, validate, test data
+        # (have been cutting cells in cellcutter at 1 cell per chunk for 
+        # efficient indexing during model training with shuffling, which
+        # requires random-access indexing. Rechunking the number of cells per 
+        # chunk here for efficient image patch encoding.)
         X_combo = zarr.open(
             combo_dir,
             mode='w',
-            shape=(X_train.shape[0], X_train.shape[1], X_train.shape[2], X_train.shape[3]),
-            chunks=(X_train.chunks[0], X_train.chunks[1], X_train.chunks[2], X_train.chunks[3]),
+            shape=(X_train.shape[0], X_train.shape[1], X_train.shape[2], 
+                   X_train.shape[3]),
+            chunks=(X_train.chunks[0], 200, X_train.chunks[2], 
+                    X_train.chunks[3]),
             compressor=X_train.compressor, dtype=X_train.dtype
         )
         
@@ -1043,8 +1095,9 @@ def ENCODE_IMAGES(config):
         os.makedirs(combo_dir_seg)
 
         print('Combined segmentation outlines does not exist, creating...')
-
-        # read segmentation thumbnails for training data (16-bit unsigned integer)
+        print()
+        
+        # read seg. thumbnails for training data (16-bit unsigned int)
         z1_train_path_seg = os.path.join(
             config.output_path,
             f'2_cellcutter_output_win{config.window_size}'
@@ -1053,7 +1106,7 @@ def ENCODE_IMAGES(config):
         store = zarr.ZipStore(z1_train_path_seg, mode='r')
         X_train_seg = zarr.open(store=store)
 
-        # read segmentation thumbnails for validation data (16-bit unsigned int)
+        # read seg. thumbnails for validation data (16-bit unsigned int)
         z1_validate_path_seg = os.path.join(
             config.output_path,
             f'2_cellcutter_output_win{config.window_size}'
@@ -1062,7 +1115,7 @@ def ENCODE_IMAGES(config):
         store = zarr.ZipStore(z1_validate_path_seg, mode='r')
         X_validate_seg = zarr.open(store=store)
 
-        # read segmentation thumbnails for test data (16-bit unsigned integer)
+        # read seg. thumbnails for test data (16-bit unsigned int)
         z1_test_path_seg = os.path.join(
             config.output_path,
             f'2_cellcutter_output_win{config.window_size}'
@@ -1076,11 +1129,11 @@ def ENCODE_IMAGES(config):
             combo_dir_seg,
             mode='w',
             shape=(
-                X_train_seg.shape[0], X_train_seg.shape[1], X_train_seg.shape[2],
-                X_train_seg.shape[3]
+                X_train_seg.shape[0], X_train_seg.shape[1], 
+                X_train_seg.shape[2], X_train_seg.shape[3]
             ),
             chunks=(
-                X_train_seg.chunks[0], X_train_seg.chunks[1], X_train_seg.chunks[2],
+                X_train_seg.chunks[0], 200, X_train_seg.chunks[2],
                 X_train_seg.chunks[3]
             ),
             compressor=X_train_seg.compressor, dtype=X_train_seg.dtype
@@ -1093,8 +1146,9 @@ def ENCODE_IMAGES(config):
     ###########################################################################
 
     if config.cluster_full_dataset:
-        print()
+        
         print('Working with combined training, validation, and test data.')
+        print()
 
         # read combined thumbnails
         X = zarr.open(combo_dir)
@@ -1105,7 +1159,9 @@ def ENCODE_IMAGES(config):
         X_seg = transposeZarr(z=X_seg)
 
         # read training labels
-        y_train = pd.read_csv(os.path.join(config.output_path, '1_cellcutter_input/train.csv'))
+        y_train = pd.read_csv(
+            os.path.join(config.output_path, '1_cellcutter_input/train.csv')
+        )
 
         # read validation labels
         y_validate = pd.read_csv(
@@ -1113,10 +1169,13 @@ def ENCODE_IMAGES(config):
         )
 
         # read test labels
-        y_test = pd.read_csv(os.path.join(config.output_path, '1_cellcutter_input/test.csv'))
+        y_test = pd.read_csv(
+            os.path.join(config.output_path, '1_cellcutter_input/test.csv')
+        )
 
         # combine labels for train, validate, and test data
         y = pd.concat([y_train, y_validate, y_test], axis=0)
+        labels = y['Sample']
 
     else:  # take a sample of test thumbnail data for analysis
 
@@ -1129,7 +1188,10 @@ def ENCODE_IMAGES(config):
         store = zarr.ZipStore(z1_test_path, mode='r')
         X_test = zarr.open(store=store)
         X = transposeZarr(z=X_test)
-        X = X[0:config.clustering_sample_size]
+
+        # computing for processing efficiency, large clustering_sample_sizes
+        # not able to fit in memory, may need to rechunk 
+        X = X[0:config.clustering_sample_size].compute()  
 
         # read segmentation thumbnails for test data (16-bit unsigned integer)
         z1_test_path_seg = os.path.join(
@@ -1140,60 +1202,53 @@ def ENCODE_IMAGES(config):
         store = zarr.ZipStore(z1_test_path_seg, mode='r')
         X_test_seg = zarr.open(store=store)
         X_seg = transposeZarr(z=X_test_seg)
-        X_seg = X_seg[0:config.clustering_sample_size]
+        X_seg = X_seg[0:config.clustering_sample_size].compute()
 
         # read test labels
-        y_test = pd.read_csv(os.path.join(config.output_path, '1_cellcutter_input/test.csv'))
+        y_test = pd.read_csv(
+            os.path.join(config.output_path, '1_cellcutter_input/test.csv')
+        )
         y = y_test[0:config.clustering_sample_size].copy()
-
+        labels = y['Sample']
+    
     ###########################################################################
 
-    # def compute_vignette_mask2(img_batch, std_dev):
-    #     import cv2
-    #     window_size = img_batch.shape[1]
-    #     kernel = cv2.getGaussianKernel(window_size, std_dev).astype('float32')
-    #     mask = (kernel * kernel.T)  
-    #     mask = cv2.normalize(mask, None, 0, 1, cv2.NORM_MINMAX)
-    #     mask = mask[np.newaxis, :, :, np.newaxis] 
+    mask, vmin, vmax = compute_vignette_mask(
+        window_size=config.window_size, std_dev=config.mask_std_dev
+    )
 
-    #     return mask
-    
-    # mask = compute_vignette_mask2(X, std_dev=config.mask_std_dev)
-    
-    mask, vmin, vmax = compute_vignette_mask(X, std_dev=config.mask_std_dev)
+    dask_labels = da.from_array(labels.values, chunks=(X.chunksize[0],))
+    dask_labels = dask_labels.reshape((-1, 1, 1, 1))
 
-    # preprocess image patches
-    X_transform = clip_outlier_pixels(log_transform(X), percentile_cutoffs)
+    print('Aligning histograms.')
+    print()
+    X_transform = da.map_blocks(
+        align_histograms, X, dask_labels, limits, dtype=np.float32,
+    )
     
     if config.masked_model:
         print('Apply Gaussian vignette mask.')
+        print()
         X_transform *= mask
-
-    # create a new Zarr to store the processed Dask array image patches
-    # patches_store = zarr.open(
-    #     os.path.join(save_dir, 'processed_zarr'),
-    #     mode='w',
-    #     shape=X_transform.shape,
-    #     chunks=X_transform.chunksize,
-    #     dtype=X_transform.dtype,
-    # )
     
-    # save the processed Dask array image patches back to the Zarr store
-    # da.store(X_transform, patches_store)
-
     ###########################################################################
     # encode images
     try:
         X_encoded = np.load(
-            os.path.join(save_dir, f'{os.path.basename(config.output_path)}_encodings.npy')
+            os.path.join(
+                save_dir, 
+                f'{os.path.basename(config.output_path)}_encodings.npy')
         )
         assert X_encoded.shape[0] == X_transform.shape[0]
     
     except (FileNotFoundError, AssertionError):
         print('Encoding images...')
-        X_encoded = encoder.predict(X_transform)
+
+        X_encoded = encoder.predict(X_transform, batch_size=32)
+
         np.save(
-            os.path.join(save_dir, f'{os.path.basename(config.output_path)}_encodings'),
+            os.path.join(
+                save_dir, f'{os.path.basename(config.output_path)}_encodings'),
             X_encoded
         )
 
@@ -1202,9 +1257,20 @@ def ENCODE_IMAGES(config):
         x_encoded_df = pd.concat(
             [y['CellID'].reset_index(drop=True), pd.DataFrame(temp)], axis=1)
         x_encoded_df.to_csv(
-            os.path.join(save_dir, f'{os.path.basename(config.output_path)}_encodings.csv'), 
+            os.path.join(
+                save_dir, 
+                f'{os.path.basename(config.output_path)}_encodings.csv'), 
             index=False
         )
+
+    # X_decoded = DecodeVectors(
+    #     decoder=decoder, percentile_cutoffs=percentile_cutoffs, 
+    #     contrast_limits=contrast_limits,
+    #     X_encoded=X_encoded, X_seg=X_seg,
+    #     orig_input_dims=training_thumb_dims,
+    #     channel_color_dict=config.channel_colors,
+    #     intensity_multiplier=1.3
+    # )
 
     ###########################################################################
     # embed latent vectors if they are greater than 2D
@@ -1232,11 +1298,11 @@ def ENCODE_IMAGES(config):
             print('Computing UMAP embedding.')
             X_encoded_embedded = UMAP(
                 n_components=3,
-                n_neighbors=30,
+                n_neighbors=15,
                 learning_rate=1.0,
                 output_metric='euclidean',
                 min_dist=0.1,
-                repulsion_strength=3,
+                repulsion_strength=2,
                 random_state=1,
                 n_epochs=1000,
                 init='spectral',
@@ -1285,7 +1351,7 @@ def ENCODE_IMAGES(config):
         X_encoded_embedded = X_encoded.copy()
 
     ###########################################################################
-
+ 
     # cluster the data with HDBSCAN
     print(f'Minimum_cluster_size is {config.hdbscan_min_cluster_size}')
 
@@ -1302,51 +1368,80 @@ def ENCODE_IMAGES(config):
         match_reference_implementation=False).fit(X_encoded_embedded)
 
     print(np.unique(clustering.labels_))
-
+    
+    sys.exit(0)
+    
     ###########################################################################
-    patches = pd.read_csv('/Users/greg/projects/vae-paper/src/output/leiden_clustering/VAE40_ROT_encodings-patches.csv')
+    # patches = pd.read_csv(
+    #     '/n/scratch/users/g/gjb15/VAE9_VIG7_multi-tissue/test/combined/'
+    #     '6_latent_space_LD412/leiden_out_nn20_r2.5/'
+    #     'combined_encodings-patches.csv'
+    # )
     
-    # new = pd.read_csv('/Users/greg/projects/vae-paper/src/input/VAE20_ROT_VIG40/6_latent_space_LD850/clustering_full/UMAP/neighbors15_repulsion1_random1/Leiden_cluster_labels_50PC_29C.csv')
+    # plot latent vectors colored by high-dimensional Leiden clustering
+    # (np.array call is for function to recognize input as VAE clustering)
     
-    # new = pd.read_csv('/Users/greg/projects/vae-paper/src/input/VAE9_ROT_VIG18/6_latent_space_LD184/clustering_full/UMAP/neighbors30_repulsion5_random1/Leiden_cluster_labels_50PC_32C.csv')
+    # label_color_dict = PlotLatentSpace(
+    #     reconstructions=False,
+    #     zoom=None,
+    #     X_encoded_embedded=X_encoded_embedded,
+    #     X_decoded=None,
+    #     y=np.array(patches['Cluster'][patches['CellID'].isin(y['CellID'])]),  
+    #     channel_color_dict=None,
+    #     scatter_point_size=270000 / len(X_encoded_embedded),
+    #     filename='vector-based_leiden_clustering',
+    #     save_dir=save_dir
+    # )
 
-    # new = pd.read_csv(
-    #     '/Users/greg/projects/vae-paper/src/input/VAE20/6_latent_space_LD850/'
-    #     'clustering_full/UMAP/neighbors30_repulsion3_random3/'
-    #     'Leiden_cluster_labels_50PC_36C.csv')
+    # shuffle data to scramble sample labels
+    # res1 = y[y['Sample'].isin(['CRC097', 'CRC102'])]
+    # res2 = y[
+    #     (y['Sample'].isin(['C9'])) & 
+    #     (y['cluster'].isin([0, 4, 8, 13, 23, 28]))
+    # ]
+    # res3 = pd.concat([res1, res2], axis=0).sample(frac=1.0)
+    # res3['size'] = 1
+    # res4 = y[
+    #     (y['Sample'].isin(['C9'])) & 
+    #     ~(y['cluster'].isin([0, 4, 8, 13, 23, 28]))
+    # ]
+    # res4['size'] = 2
+    # y = pd.concat([res3, res4], axis=0)
+    # y['size'] = [i * (144000 / len(X_encoded_embedded)) for i in y['size']]
+    # X_encoded_embedded = X_encoded_embedded[y.index]
 
-    # plot latent vectors colored according to high-dimensional Leiden clustering
-    label_color_dict = PlotLatentSpace(
-        reconstructions=False,
-        zoom=None,
-        X_encoded_embedded=X_encoded_embedded,
-        X_decoded=None,
-        y=np.array(patches['Cluster'][patches['CellID'].isin(y['CellID'])]), # np.array for function to recognize input as VAE clustering
-        channel_color_dict=None,
-        scatter_point_size=150000 / len(X_encoded_embedded),
-        filename='vector-based_leiden_clustering',
-        save_dir=save_dir
-    )
-
+    # # plot latent vectors colored according to sample
+    # label_color_dict = PlotLatentSpace(
+    #     reconstructions=False,
+    #     zoom=None,
+    #     X_encoded_embedded=X_encoded_embedded,
+    #     X_decoded=None,
+    #     y=y,
+    #     channel_color_dict=None,
+    #     scatter_point_size=144000 / len(X_encoded_embedded),
+    #     filename='embedding_by_sample',
+    #     save_dir=save_dir
+    # )
+    
     # plot latent vectors colored according to prior clustering
-    label_color_dict = PlotLatentSpace(
-        reconstructions=False,
-        zoom=None,
-        X_encoded_embedded=X_encoded_embedded,
-        X_decoded=None,
-        y=y['cluster_2d'],
-        channel_color_dict=None,
-        scatter_point_size=144000 / len(X_encoded_embedded),
-        filename='segmentation-based_leiden_clustering',
-        save_dir=save_dir
-    )
-
+    # label_color_dict = PlotLatentSpace(
+    #     reconstructions=False,
+    #     zoom=None,
+    #     X_encoded_embedded=X_encoded_embedded,
+    #     X_decoded=None,
+    #     y=y,
+    #     channel_color_dict=None,
+    #     scatter_point_size=350000 / len(X_encoded_embedded),
+    #     filename='segmentation-based_leiden_clustering',
+    #     save_dir=save_dir
+    # )
+    
     # REMOVE UNCLUSTERED CELLS (cluster -1)
     # plot latent vectors colored by HDBSCAN clustering of latent space
     # filter_indices = np.where(clustering.labels_ != -1)[0].tolist()
     # X_encoded_embedded_filt = np.take(X_encoded_embedded, filter_indices, 0)
     # clustering_labels = clustering.labels_[filter_indices]
-
+    
     PlotLatentSpace(
         reconstructions=False,
         zoom=None,
@@ -1358,15 +1453,15 @@ def ENCODE_IMAGES(config):
         filename='embedding-based_hdbscan_clustering',
         save_dir=save_dir
     )
-    import pdb; pdb.set_trace()
+
     # reconstruct thumbnail images from latent vectors
-    # X_decoded = DecodeVectors(
-    #     decoder=decoder, percentile_cutoffs=percentile_cutoffs, contrast_limits=contrast_limits,
-    #     X_encoded=X_encoded, X_seg=X_seg,
-    #     orig_input_dims=training_thumb_dims,
-    #     channel_color_dict=config.channel_colors,
-    #     intensity_multiplier=1.3
-    # )
+    X_decoded = DecodeVectors(
+        decoder=decoder, percentile_cutoffs=percentile_cutoffs, contrast_limits=contrast_limits,
+        X_encoded=X_encoded, X_seg=X_seg,
+        orig_input_dims=training_thumb_dims,
+        channel_color_dict=config.channel_colors,
+        intensity_multiplier=1.3
+    )
 
     # initialize a numpy array to store reconstructed thumbnails
     X_transform_rgb = np.empty(shape=(0, training_thumb_dims[0], training_thumb_dims[1], 3))
@@ -1423,8 +1518,8 @@ def ENCODE_IMAGES(config):
         reconstructions=True,
         zoom=0.5,
         X_encoded_embedded=X_encoded_embedded,
-        X_decoded=X_transform_rgb, # X_decoded,
-        y=y['cluster_2d'],
+        X_decoded=X_transform_rgb,  # X_decoded,
+        y=y['cluster_3d'],
         channel_color_dict=config.channel_colors,
         scatter_point_size=144000 / len(X_encoded_embedded),
         filename='image_patches',
@@ -1438,7 +1533,7 @@ def ENCODE_IMAGES(config):
             orig_input_dims=training_thumb_dims,
             grid_size=50,
             X_encoded=X_encoded,
-            y=y['cluster_2d'],
+            y=y['cluster_3d'],
             decoder=decoder,
             label_color_dict=label_color_dict,
             channel_color_dict=config.channel_colors,
@@ -1465,7 +1560,7 @@ def ENCODE_IMAGES(config):
             X_encoded=X_encoded,
             X_encoded_embedded=X_encoded_embedded,
             X_decoded=X_decoded,
-            y=y['cluster_2d'],
+            y=y['cluster_3d'],
             numColumns=10,
             intensity_multiplier=1.1,
             label_color_dict=label_color_dict,
@@ -1485,7 +1580,7 @@ def ENCODE_IMAGES(config):
         X=X_transform[0:100],
         X_seg=X_seg[0:100],
         X_encoded=X_encoded[0:100],
-        y=y['cluster_2d'][0:100],
+        y=y['cluster_3d'][0:100],
         numColumns=10,
         label_color_dict=label_color_dict,
         channel_color_dict=config.channel_colors,
@@ -1510,7 +1605,7 @@ def ENCODE_IMAGES(config):
             X=X_transform,
             X_seg=X_seg,
             X_encoded=X_encoded,
-            y=y['cluster_2d'],
+            y=y['cluster_3d'],
             mse_percentile_cutoff=99,
             filename='mse_dist',
             save_dir=save_dir

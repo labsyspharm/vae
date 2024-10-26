@@ -28,7 +28,7 @@ def MAKE_FEATURE_PROCESSING_SELECTIONS(config):
 
         # format plot grid
         numRows = 4
-        numColumns = 6
+        numColumns = 8
         grid_dims = (numRows, numColumns)
 
         # initialize figure canvas
@@ -51,9 +51,12 @@ def MAKE_FEATURE_PROCESSING_SELECTIONS(config):
             # log-transform image
             log_img = log_transform(img)
 
+            # ignore zeros when computing lower and upper percentile cutoffs 
+            non_zero = log_img[log_img > 0]
+
             # specify lower and upper percentile cutoffs
-            lower_cutoff_log = np.percentile(log_img.ravel(), 0.17)
-            upper_cutoff_log = np.percentile(log_img.ravel(), 99.99)
+            lower_cutoff_log = np.percentile(non_zero.ravel(), config.cutoffs[0])
+            upper_cutoff_log = np.percentile(non_zero.ravel(), config.cutoffs[1])
 
             # add channel cutoffs to dict
             cutoffs[marker] = (lower_cutoff_log, upper_cutoff_log)
@@ -82,8 +85,8 @@ def MAKE_FEATURE_PROCESSING_SELECTIONS(config):
                 log_img.ravel(), bins=60, color='tab:blue', alpha=0.7, rwidth=0.85
             )
             ax_log.vlines(
-                x=[np.percentile(log_img.ravel(), 0.17),
-                   np.percentile(log_img.ravel(), 99.99)],
+                x=[np.percentile(non_zero.ravel(), config.cutoffs[0]),
+                   np.percentile(non_zero.ravel(), config.cutoffs[1])],
                 ymin=0, ymax=vals.max(), color='tab:red'
             )
             ax_log.title.set_text(marker)

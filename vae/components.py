@@ -4,9 +4,10 @@ import functools
 from vae.modules.generate_cellcutter_input import GENERATE_CELLCUTTER_INPUT
 from vae.modules.run_cellcutter import RUN_CELLCUTTER
 from vae.modules.generate_image_gallery import GENERATE_IMAGE_GALLERY
-from vae.modules.feature_preprocessing_selections import MAKE_FEATURE_PROCESSING_SELECTIONS
+from vae.modules.align_histograms import ALIGN_HISTOGRAMS
 from vae.modules.train_vae import TRAIN_VAE
 from vae.modules.encode_images import ENCODE_IMAGES
+from vae.modules.saliency_map import SALIENCY_MAP
 
 
 def module(func):
@@ -39,6 +40,7 @@ pipeline_module_names = []
 module(GENERATE_CELLCUTTER_INPUT)
 module(RUN_CELLCUTTER)
 module(GENERATE_IMAGE_GALLERY)
-module(MAKE_FEATURE_PROCESSING_SELECTIONS)
+module(ALIGN_HISTOGRAMS)
 module(TRAIN_VAE)
 module(ENCODE_IMAGES)
+module(SALIENCY_MAP)
