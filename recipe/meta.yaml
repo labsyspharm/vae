@@ -1,4 +1,4 @@
-{% set name = "MORPHAEUS" %}
+{% set name = "vae" %}
 {% set version = "0.0.3" %}
 
 package:
