@@ -1,4 +1,5 @@
-import math, pickle
+import math
+import pickle
 
 import numpy as np
 
@@ -35,23 +36,37 @@ def batch_run(function, images, batch_size=5000):
     return np.concatenate(res, axis=0)
 
 
-def preprocess(attributions, q1, q2, use_abs=False):
+def preprocess(attrs, q1, q2, use_abs=False):
     
     if use_abs:
-        attributions = np.abs(attributions)
+        attrs = np.abs(attrs)
+
+    # identify percentile thresholds
+    attrs_thresh_low = np.percentile(attrs, q1, axis=(1, 2, 3), keepdims=True)
+    attrs_thresh_high = np.percentile(attrs, q2, axis=(1, 2, 3), keepdims=True)
+
+    # create boolean mask with same shape as attrs; 
+    # filled with True if attrs_thresh_low is positive
+    # filled with False if attrs_thresh_low is negative
+    pos = np.tile(
+        attrs_thresh_low > 0, 
+        [1, attrs.shape[1],
+         attrs.shape[2],
+         attrs.shape[3]
+         ]
+        )
+
+    # get indices where attribution values are less than attrs_thresh_low 
+    ind = np.where(attrs < attrs_thresh_low)
     
-    attributions = np.sum(attributions, axis=-1)
-    
-    a_min = np.percentile(attributions, q1, axis=(1,2), keepdims=True)
-    a_max = np.percentile(attributions, q2, axis=(1,2), keepdims=True)
-    
-    pos = np.tile(a_min > 0, [1,attributions.shape[1],attributions.shape[2]])
-    ind = np.where(attributions < a_min)
-    
-    attributions = np.clip(attributions, a_min, a_max)
-    attributions[ind] = (1 - pos[ind]) * attributions[ind]
-    
-    return attributions
+    # clip array to low and upper threshold values
+    attrs_clip = np.clip(attrs, attrs_thresh_low, attrs_thresh_high)
+
+    # set attribution values less than attrs_thresh_low to zero
+    # if attrs_thresh_low is positive
+    attrs_clip[ind] = (1 - pos[ind]) * attrs_clip[ind]
+
+    return attrs_clip, attrs_thresh_low, attrs_thresh_high
 
 
 def pixel_range(img):

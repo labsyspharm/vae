@@ -57,7 +57,7 @@ def PlotInputImgs(numExamples, numColumns, imgs, seg, intensity_multiplier, labe
 
             lyr = imgs[ch, row[0], :, :]
 
-            # lyr = lyr.astype('float') # use for binary patches
+            # lyr = lyr.astype('float')  # use for binary patches
             
             lyr = img_as_float(lyr)
 

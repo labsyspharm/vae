@@ -3,12 +3,12 @@ requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
-name = "VAE"
-version = "0.0.1"
-description = "Generate thumbnail images of cells from a multi-channel TIFF image, train a VAE model, and perform clustering on latent space vectors."
+name = "MORPHAEUS"
+version = "0.0.3"
+description = "Generate cropped image patches from a multi-channel TIF image, train a VAE model, and perform clustering on latent space image patch encodings."
 readme = "README.md"
 license = "MIT"
-keywords =['VAE segmentation-free celltype inference']
+keywords =['spatial proteomics, variational autoencoder (VAE), artificial intelligence, tissue phenotyping']
 classifiers=[
     'Development Status :: 4 - Beta',
     'Intended Audience :: End Users/Desktop',
@@ -33,7 +33,6 @@ pyarrow = "*"
 pyyaml = "*"
 seaborn = "*"
 tensorflow = "2.15.0"
-tensorflow-gpu = "*"
 cellcutter = "*"
 opencv-python = "*"
 dask = "*"

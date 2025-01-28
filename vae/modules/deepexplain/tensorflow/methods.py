@@ -3,22 +3,28 @@ from __future__ import division
 from __future__ import print_function
 
 import sys
-import numpy as np
-from skimage.util import view_as_windows
 import warnings
-import tensorflow as tf
+
+import numpy as np
+
+from skimage.util import view_as_windows
+
+import tensorflow.compat.v1 as tf
+
+# "tf.contrib" not available in tensorflow.compat.v1
+# must use tensorflow probability to compute percentile stats
+import tensorflow_probability as tfp  
 
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import nn_grad, math_grad
 from tensorflow.python.ops import nn_ops, gen_nn_ops
 from collections import OrderedDict
 
-SUPPORTED_OPERATIONS = [
-    'Conv2D', 'MaxPool'
-]
+SUPPORTED_OPERATIONS = ['Conv2D', 'MaxPool']
 
 SUPPORTED_ACTIVATIONS = [
-    'Relu', 'Elu', 'Sigmoid', 'Tanh', 'Softplus', 'CRelu', 'Relu6', 'Softsign'
+    'Relu', 'Elu', 'Sigmoid', 'Tanh', 'Softplus', 
+    'CRelu', 'Relu6', 'Softsign'
 ]
 
 UNSUPPORTED_ACTIVATIONS = [
@@ -27,7 +33,6 @@ UNSUPPORTED_ACTIVATIONS = [
 
 _ENABLED_METHOD_CLASS = None
 _GRAD_OVERRIDE_CHECKFLAG = 0
-
 
 # -----------------------------------------------------------------------------
 # UTILITY FUNCTIONS
@@ -78,15 +83,19 @@ class AttributionMethod(object):
         self.xs = xs
         self.session = session
         self.keras_learning_phase = keras_learning_phase
-        self.has_multiple_inputs = type(self.X) is list or type(self.X) is tuple
+        self.has_multiple_inputs = (
+            type(self.X) is list or type(self.X) is tuple
+        )
         # print ('Model with multiple inputs: ', self.has_multiple_inputs)
 
     def session_run(self, T, xs):
         feed_dict = {}
         if self.has_multiple_inputs:
             if len(xs) != len(self.X):
-                raise RuntimeError('List of input tensors and input data have different lengths (%s and %s)'
-                                   % (str(len(xs)), str(len(self.X))))
+                raise RuntimeError(
+                    'List of input tensors and input data have different'
+                    'lengths (%s and %s)' % (str(len(xs)), str(len(self.X)))
+                )
             for k, v in zip(self.X, xs):
                 feed_dict[k] = v
         else:
@@ -99,7 +108,9 @@ class AttributionMethod(object):
     def _set_check_baseline(self):
         if self.baseline is None:
             if self.has_multiple_inputs:
-                self.baseline = [np.zeros((1,) + xi.shape[1:]) for xi in self.xs]
+                self.baseline = [
+                    np.zeros((1,) + xi.shape[1:]) for xi in self.xs
+                ]
             else:
                 self.baseline = np.zeros((1,) + self.xs.shape[1:])
 
@@ -109,26 +120,32 @@ class AttributionMethod(object):
                     if self.baseline[i].shape == self.xs[i].shape[1:]:
                         self.baseline[i] = np.expand_dims(self.baseline[i], 0)
                     else:
-                        raise RuntimeError('Baseline shape %s does not match expected shape %s'
-                                           % (self.baseline[i].shape, self.xs[i].shape[1:]))
+                        raise RuntimeError(
+                            'Baseline shape %s does not match expected'
+                            'shape %s' % (self.baseline[i].shape, 
+                                          self.xs[i].shape[1:])
+                        )
             else:
                 if self.baseline.shape == self.xs.shape[1:]:
                     self.baseline = np.expand_dims(self.baseline, 0)
                 else:
-                    raise RuntimeError('Baseline shape %s does not match expected shape %s'
-                                       % (self.baseline.shape, self.xs.shape[1:]))
+                    raise RuntimeError(
+                        'Baseline shape %s does not match expected shape %s'
+                        % (self.baseline.shape, self.xs.shape[1:])
+                    )
 
 
 class GradientBasedMethod(AttributionMethod):
     """
     Base class for gradient-based attribution methods
     """
+
     def get_symbolic_attribution(self):
         return tf.gradients(self.T, self.X)
 
     def run(self):
         attributions = self.get_symbolic_attribution()
-        results =  self.session_run(attributions, self.xs)
+        results = self.session_run(attributions, self.xs)
         return results[0] if not self.has_multiple_inputs else results
 
     @classmethod
@@ -141,7 +158,9 @@ class PerturbationBasedMethod(AttributionMethod):
        Base class for perturbation-based attribution methods
        """
     def __init__(self, T, X, xs, session, keras_learning_phase):
-        super(PerturbationBasedMethod, self).__init__(T, X, xs, session, keras_learning_phase)
+        super(PerturbationBasedMethod, self).__init__(
+            T, X, xs, session, keras_learning_phase
+        )
         self.base_activation = None
 
     def _run_input(self, x):
@@ -172,43 +191,49 @@ class DummyZero(GradientBasedMethod):
         input = op.inputs[0]
         return tf.zeros_like(input)
 
+
 """
 Rectified Gradient
 """
-
-def threshold(x, q):
-    
-        if len(x.shape.as_list()) > 3:
-            thresh = tf.contrib.distributions.percentile(x, q, axis=[1,2,3], keep_dims=True)
-        else:
-            thresh = tf.contrib.distributions.percentile(x, q, axis=1, keep_dims=True)
-
-        return thresh
 
 
 class RectifiedGradient(GradientBasedMethod):
     q = None
 
     def __init__(self, T, X, xs, session, keras_learning_phase, percentile=98):
-        super(RectifiedGradient, self).__init__(T, X, xs, session, keras_learning_phase)
+        super(RectifiedGradient, self).__init__(
+            T, X, xs, session, keras_learning_phase
+        )
         global q
         q = percentile
 
     def get_symbolic_attribution(self):
         
-#         activation_grad = tf.gradients(self.T, self.X) * self.X
-#         thresh = threshold(activation_grad, 95)
+        # activation_grad = tf.gradients(self.T, self.X) * self.X
+        # thresh = threshold(activation_grad, 95)
         
-#         return tf.where(thresh < activation_grad, activation_grad, tf.zeros_like(activation_grad))
+        # return tf.where(
+        #     thresh < activation_grad, activation_grad, 
+        #     tf.zeros_like(activation_grad)
+        # )
         
-#         return tf.nn.relu(activation_grad)
-        
+        # return tf.nn.relu(activation_grad)
+
         return [g * x for g, x in zip(
             tf.gradients(self.T, self.X),
             self.X if self.has_multiple_inputs else [self.X])]
 
     @classmethod
     def nonlinearity_grad_override(cls, op, grad):
+        
+        def threshold(x, q):
+            if len(x.shape.as_list()) > 3:
+                thresh = tfp.stats.percentile(
+                    x, q, axis=[1, 2, 3], keepdims=True
+                )
+            else:
+                thresh = tfp.stats.percentile(x, q, axis=1, keepdims=True)
+            return thresh
         
         activation_grad = op.outputs[0] * grad
         thresh = threshold(activation_grad, q)
@@ -217,16 +242,22 @@ class RectifiedGradient(GradientBasedMethod):
     
     @classmethod
     def conv2d_grad_override(cls, op, grad):
-        
+
         if op.get_attr('padding') == b'SAME':
         
             shape = tf.shape(grad)
             mask = tf.ones([shape[0], shape[1] - 2, shape[2] - 2, shape[3]])
-            mask = tf.pad(mask, [[0,0],[1,1],[1,1],[0,0]])
+            mask = tf.pad(mask, [[0, 0], [1, 1], [1, 1], [0, 0]])
             grad = grad * mask
 
-        input_grad = tf.nn.conv2d_backprop_input(tf.shape(op.inputs[0]), op.inputs[1], grad, op.get_attr('strides'), op.get_attr('padding'))
-        filter_grad = tf.nn.conv2d_backprop_filter(op.inputs[0], tf.shape(op.inputs[1]), grad, op.get_attr('strides'), op.get_attr('padding'))
+        input_grad = tf.nn.conv2d_backprop_input(
+            tf.shape(op.inputs[0]), op.inputs[1], grad, op.get_attr('strides'), 
+            op.get_attr('padding')
+        )
+        filter_grad = tf.nn.conv2d_backprop_filter(
+            op.inputs[0], tf.shape(op.inputs[1]), grad, op.get_attr('strides'),
+            op.get_attr('padding')
+        )
 
         return input_grad, filter_grad
 
@@ -240,7 +271,9 @@ class RectifiedGradientMod(GradientBasedMethod):
     q = None
 
     def __init__(self, T, X, xs, session, keras_learning_phase, percentile=98):
-        super(RectifiedGradientMod, self).__init__(T, X, xs, session, keras_learning_phase)
+        super(RectifiedGradientMod, self).__init__(
+            T, X, xs, session, keras_learning_phase
+        )
         global q
         q = percentile
 
@@ -255,10 +288,13 @@ class RectifiedGradientMod(GradientBasedMethod):
         def threshold(x, q):
     
             if len(x.shape.as_list()) > 3:
-                thresh = tf.contrib.distributions.percentile(x, q, axis=[1,2,3], keep_dims=True)
+                thresh = tfp.stats.percentile(
+                    x, q, axis=[1, 2, 3], keepdims=True
+                )
             else:
-                thresh = tf.contrib.distributions.percentile(x, q, axis=1, keep_dims=True)
-
+                thresh = tfp.stats.percentile(
+                    x, q, axis=1, keepdims=True
+                )
             return thresh
 
         if 'Logits' in op.name:
@@ -277,11 +313,17 @@ class RectifiedGradientMod(GradientBasedMethod):
         
             shape = tf.shape(grad)
             mask = tf.ones([shape[0], shape[1] - 2, shape[2] - 2, shape[3]])
-            mask = tf.pad(mask, [[0,0],[1,1],[1,1],[0,0]])
+            mask = tf.pad(mask, [[0, 0], [1, 1], [1, 1], [0, 0]])
             grad = grad * mask
 
-        input_grad = tf.nn.conv2d_backprop_input(tf.shape(op.inputs[0]), op.inputs[1], grad, op.get_attr('strides'), op.get_attr('padding'))
-        filter_grad = tf.nn.conv2d_backprop_filter(op.inputs[0], tf.shape(op.inputs[1]), grad, op.get_attr('strides'), op.get_attr('padding'))
+        input_grad = tf.nn.conv2d_backprop_input(
+            tf.shape(op.inputs[0]), op.inputs[1], grad, op.get_attr('strides'),
+            op.get_attr('padding')
+        )
+        filter_grad = tf.nn.conv2d_backprop_filter(
+            op.inputs[0], tf.shape(op.inputs[1]), grad, op.get_attr('strides'),
+            op.get_attr('padding')
+        )
 
         return input_grad, filter_grad
 
@@ -295,7 +337,9 @@ class RectifiedGradientConst(GradientBasedMethod):
     t = None
 
     def __init__(self, T, X, xs, session, keras_learning_phase, tau=0):
-        super(RectifiedGradientConst, self).__init__(T, X, xs, session, keras_learning_phase)
+        super(RectifiedGradientConst, self).__init__(
+            T, X, xs, session, keras_learning_phase
+        )
         global t
         t = tau
 
@@ -318,11 +362,17 @@ class RectifiedGradientConst(GradientBasedMethod):
         
             shape = tf.shape(grad)
             mask = tf.ones([shape[0], shape[1] - 2, shape[2] - 2, shape[3]])
-            mask = tf.pad(mask, [[0,0],[1,1],[1,1],[0,0]])
+            mask = tf.pad(mask, [[0, 0], [1, 1], [1, 1], [0, 0]])
             grad = grad * mask
 
-        input_grad = tf.nn.conv2d_backprop_input(tf.shape(op.inputs[0]), op.inputs[1], grad, op.get_attr('strides'), op.get_attr('padding'))
-        filter_grad = tf.nn.conv2d_backprop_filter(op.inputs[0], tf.shape(op.inputs[1]), grad, op.get_attr('strides'), op.get_attr('padding'))
+        input_grad = tf.nn.conv2d_backprop_input(
+            tf.shape(op.inputs[0]), op.inputs[1], grad, op.get_attr('strides'),
+            op.get_attr('padding')
+        )
+        filter_grad = tf.nn.conv2d_backprop_filter(
+            op.inputs[0], tf.shape(op.inputs[1]), grad, op.get_attr('strides'),
+            op.get_attr('padding')
+        )
 
         return input_grad, filter_grad
 
@@ -335,14 +385,22 @@ Rectified Gradient with Proportional Redistribution Rule
 class RectifiedGradientPRR(RectifiedGradient):
     
     def __init__(self, T, X, xs, session, keras_learning_phase, percentile=98):
-        super(RectifiedGradientPRR, self).__init__(T, X, xs, session, keras_learning_phase, percentile)
+        super(RectifiedGradientPRR, self).__init__(
+            T, X, xs, session, keras_learning_phase, percentile
+        )
     
     @classmethod
     def maxpool_grad_override(cls, op, grad):
         
-        z = tf.nn.avg_pool(op.inputs[0], op.get_attr('ksize'), op.get_attr('strides'), op.get_attr('padding')) + 1e-10
+        z = tf.nn.avg_pool(
+            op.inputs[0], op.get_attr('ksize'), op.get_attr('strides'),
+            op.get_attr('padding')
+        ) + 1e-10
         s = grad / z
-        c = gen_nn_ops._avg_pool_grad(tf.shape(op.inputs[0]), s, op.get_attr('ksize'), op.get_attr('strides'), op.get_attr('padding'))
+        c = gen_nn_ops._avg_pool_grad(
+            tf.shape(op.inputs[0]), s, op.get_attr('ksize'),
+            op.get_attr('strides'), op.get_attr('padding')
+        )
         
         return op.inputs[0] * c
 
@@ -378,10 +436,13 @@ Deconvolution
 https://arxiv.org/pdf/1311.2901.pdf
 """
 
+
 class Deconvolution(GradientBasedMethod):
 
     def __init__(self, T, X, xs, session, keras_learning_phase):
-        super(Deconvolution, self).__init__(T, X, xs, session, keras_learning_phase)
+        super(Deconvolution, self).__init__(
+            T, X, xs, session, keras_learning_phase
+        )
 
     def get_symbolic_attribution(self):
         return tf.gradients(self.T, self.X)
@@ -397,10 +458,13 @@ Guided Backpropagation
 https://arxiv.org/pdf/1412.6806.pdf
 """
 
+
 class GuidedBackpropagation(GradientBasedMethod):
 
     def __init__(self, T, X, xs, session, keras_learning_phase):
-        super(GuidedBackpropagation, self).__init__(T, X, xs, session, keras_learning_phase)
+        super(GuidedBackpropagation, self).__init__(
+            T, X, xs, session, keras_learning_phase
+        )
 
     def get_symbolic_attribution(self):
         return tf.gradients(self.T, self.X)
@@ -408,7 +472,9 @@ class GuidedBackpropagation(GradientBasedMethod):
     @classmethod
     def nonlinearity_grad_override(cls, op, grad):
         
-        return tf.where(op.inputs[0] > 0, tf.nn.relu(grad), tf.zeros_like(grad))
+        return tf.where(
+            op.inputs[0] > 0, tf.nn.relu(grad), tf.zeros_like(grad)
+        )
 
 
 """
@@ -419,8 +485,12 @@ https://arxiv.org/pdf/1706.03825.pdf
 
 class SmoothGrad(GradientBasedMethod):
 
-    def __init__(self, T, X, xs, session, keras_learning_phase, noise_level=0.1, steps=50):
-        super(SmoothGrad, self).__init__(T, X, xs, session, keras_learning_phase)
+    def __init__(
+            self, T, X, xs, session, keras_learning_phase, 
+            noise_level=0.1, steps=50):
+        super(SmoothGrad, self).__init__(
+            T, X, xs, session, keras_learning_phase
+        )
         self.noise_level = noise_level
         self.steps = steps
 
@@ -429,13 +499,20 @@ class SmoothGrad(GradientBasedMethod):
         attributions = self.get_symbolic_attribution()
         gradient = None
         
-        scale = (np.max(self.xs, axis=(1,2,3), keepdims=True) - np.min(self.xs, axis=(1,2,3), keepdims=True)) * self.noise_level if self.has_multiple_inputs else (np.max(self.xs) - np.min(self.xs)) * self.noise_level
+        scale = (np.max(self.xs, axis=(1, 2, 3), keepdims=True) - 
+                 np.min(self.xs, axis=(1, 2, 3), keepdims=True)) * (
+                 self.noise_level if self.has_multiple_inputs else 
+                 (np.max(self.xs) - np.min(self.xs)) * self.noise_level)
         
         for _ in range(self.steps):
-            xs_mod = self.xs + np.random.normal(scale=scale, size=np.shape(self.xs))
+            xs_mod = self.xs + np.random.normal(
+                scale=scale, size=np.shape(self.xs)
+            )
             _attr = self.session_run(attributions, xs_mod)
-            if gradient is None: gradient = _attr
-            else: gradient = [g + a for g, a in zip(gradient, _attr)]
+            if gradient is None:
+                gradient = _attr
+            else: 
+                gradient = [g + a for g, a in zip(gradient, _attr)]
 
         results = [g / self.steps for g in gradient]
 
@@ -450,8 +527,12 @@ https://arxiv.org/pdf/1703.01365.pdf
 
 class IntegratedGradients(GradientBasedMethod):
 
-    def __init__(self, T, X, xs, session, keras_learning_phase, steps=50, baseline=None):
-        super(IntegratedGradients, self).__init__(T, X, xs, session, keras_learning_phase)
+    def __init__(
+            self, T, X, xs, session, keras_learning_phase,
+            steps=50, baseline=None):
+        super(IntegratedGradients, self).__init__(
+            T, X, xs, session, keras_learning_phase
+        )
         self.steps = steps
         self.baseline = baseline
 
@@ -462,10 +543,15 @@ class IntegratedGradients(GradientBasedMethod):
         attributions = self.get_symbolic_attribution()
         gradient = None
         for alpha in list(np.linspace(1. / self.steps, 1.0, self.steps)):
-            xs_mod = [xs * alpha for xs in self.xs] if self.has_multiple_inputs else self.xs * alpha
+            xs_mod = (
+                [xs * alpha for xs in self.xs] if self.has_multiple_inputs 
+                else self.xs * alpha
+            )
             _attr = self.session_run(attributions, xs_mod)
-            if gradient is None: gradient = _attr
-            else: gradient = [g + a for g, a in zip(gradient, _attr)]
+            if gradient is None: 
+                gradient = _attr
+            else: 
+                gradient = [g + a for g, a in zip(gradient, _attr)]
 
         results = [g * (x - b) / self.steps for g, x, b in zip(
             gradient,
@@ -485,7 +571,9 @@ class EpsilonLRP(GradientBasedMethod):
     eps = None
 
     def __init__(self, T, X, xs, session, keras_learning_phase, epsilon=1e-4):
-        super(EpsilonLRP, self).__init__(T, X, xs, session, keras_learning_phase)
+        super(EpsilonLRP, self).__init__(
+            T, X, xs, session, keras_learning_phase
+        )
         assert epsilon > 0.0, 'LRP epsilon must be greater than zero'
         global eps
         eps = epsilon
@@ -500,7 +588,11 @@ class EpsilonLRP(GradientBasedMethod):
         output = op.outputs[0]
         input = op.inputs[0]
         return grad * output / (input + eps *
-                                tf.where(input >= 0, tf.ones_like(input), -1 * tf.ones_like(input)))
+                                tf.where(
+                                    input >= 0, tf.ones_like(input), 
+                                    -1 * tf.ones_like(input))
+                                )
+
 
 """
 DeepLIFT
@@ -514,7 +606,9 @@ class DeepLIFTRescale(GradientBasedMethod):
     _deeplift_ref = {}
 
     def __init__(self, T, X, xs, session, keras_learning_phase, baseline=None):
-        super(DeepLIFTRescale, self).__init__(T, X, xs, session, keras_learning_phase)
+        super(DeepLIFTRescale, self).__init__(
+            T, X, xs, session, keras_learning_phase
+        )
         self.baseline = baseline
 
     def get_symbolic_attribution(self):
@@ -532,8 +626,10 @@ class DeepLIFTRescale(GradientBasedMethod):
         delta_out = output - ref_output
         delta_in = input - ref_input
         instant_grad = activation(op.type)(0.5 * (ref_input + input))
-        return tf.where(tf.abs(delta_in) > 1e-5, grad * delta_out / delta_in,
-                               original_grad(instant_grad.op, grad))
+        return tf.where(
+                tf.abs(delta_in) > 1e-5, grad * delta_out / delta_in,
+                original_grad(instant_grad.op, grad)
+        )
 
     def run(self):
         # Check user baseline or set default one
@@ -564,13 +660,15 @@ class DeepLIFTRescale(GradientBasedMethod):
 
 """
 Occlusion method
-Generalization of the grey-box method presented in https://arxiv.org/pdf/1311.2901.pdf
-This method performs a systematic perturbation of contiguous hyperpatches in the input,
+Generalization of the grey-box method presented in 
+https://arxiv.org/pdf/1311.2901.pdf. This method performs a 
+systematic perturbation of contiguous hyperpatches in the input,
 replacing each patch with a user-defined value (by default 0).
 
 window_shape : integer or tuple of length xs_ndim
-Defines the shape of the elementary n-dimensional orthotope the rolling window view.
-If an integer is given, the shape will be a hypercube of sidelength given by its value.
+Defines the shape of the elementary n-dimensional orthotope the 
+rolling window view. If an integer is given, the shape will be a 
+hypercube of sidelength given by its value.
 
 step : integer or tuple of length xs_ndim
 Indicates step size at which extraction shall be performed.
@@ -580,15 +678,23 @@ If integer is given, then the step is uniform in all dimensions.
 
 class Occlusion(PerturbationBasedMethod):
 
-    def __init__(self, T, X, xs, session, keras_learning_phase, window_shape=None, step=None):
-        super(Occlusion, self).__init__(T, X, xs, session, keras_learning_phase)
+    def __init__(
+            self, T, X, xs, session, keras_learning_phase,
+            window_shape=None, step=None):
+        super(Occlusion, self).__init__(
+            T, X, xs, session, keras_learning_phase
+        )
         if self.has_multiple_inputs:
-            raise RuntimeError('Multiple inputs not yet supported for perturbation methods')
+            raise RuntimeError(
+                'Multiple inputs not yet supported for perturbation methods'
+            )
 
         input_shape = xs[0].shape
         if window_shape is not None:
             assert len(window_shape) == len(input_shape), \
-                'window_shape must have length of input (%d)' % len(input_shape)
+                'window_shape must have length of input (%d)' % len(
+                    input_shape
+                )
             self.window_shape = tuple(window_shape)
         else:
             self.window_shape = (1,) * len(input_shape)
@@ -600,19 +706,26 @@ class Occlusion(PerturbationBasedMethod):
         else:
             self.step = 1
         self.replace_value = 0.0
-        print('Input shape: %s; window_shape %s; step %s' % (input_shape, self.window_shape, self.step))
+        print(
+            'Input shape: %s; window_shape %s; step %s' % 
+            (input_shape, self.window_shape, self.step)
+        )
 
     def run(self):
+        
         self._run_original()
-
         input_shape = self.xs.shape[1:]
         batch_size = self.xs.shape[0]
-        total_dim = np.asscalar(np.prod(input_shape))
+        total_dim = np.prod(input_shape)
+        # total_dim = np.asscalar(np.prod(input_shape))
 
         # Create mask
         index_matrix = np.arange(total_dim).reshape(input_shape)
-        idx_patches = view_as_windows(index_matrix, self.window_shape, self.step).reshape((-1,) + self.window_shape)
-        heatmap = np.zeros_like(self.xs, dtype=np.float32).reshape((-1), total_dim)
+        idx_patches = view_as_windows(
+                index_matrix, self.window_shape,
+                self.step).reshape((-1,) + self.window_shape)
+        heatmap = np.zeros_like(
+            self.xs, dtype=np.float32).reshape((-1), total_dim)
         w = np.zeros_like(heatmap)
 
         # Compute original output
@@ -620,18 +733,27 @@ class Occlusion(PerturbationBasedMethod):
 
         # Start perturbation loop
         for i, p in enumerate(idx_patches):
+            # print(i)
             mask = np.ones(input_shape).flatten()
             mask[p.flatten()] = self.replace_value
             masked_xs = mask.reshape((1,) + input_shape) * self.xs
             delta = eval0 - self._run_input(masked_xs)
-            delta_aggregated = np.sum(delta.reshape((batch_size, -1)), -1, keepdims=True)
+            delta_aggregated = np.sum(
+                delta.reshape((batch_size, -1)), -1, keepdims=True
+            )
             heatmap[:, p.flatten()] += delta_aggregated
             w[:, p.flatten()] += p.size
 
         attribution = np.reshape(heatmap / w, self.xs.shape)
+
         if np.isnan(attribution).any():
-            warnings.warn('Attributions generated by Occlusion method contain nans, '
-                          'probably because window_shape and step do not allow to cover the all input.')
+            print()
+            warnings.warn(
+                'Aborting; attributions generated by Occlusion method contain '
+                'nans, probably because window_shape and step do not '
+                'allow to cover the all input.'
+            )
+            sys.exit(1)
         return attribution
 
 
@@ -658,7 +780,6 @@ attribution_methods = OrderedDict({
 })
 
 
-
 @ops.RegisterGradient("DeepExplainGrad")
 def deepexplain_grad(op, grad):
     global _ENABLED_METHOD_CLASS, _GRAD_OVERRIDE_CHECKFLAG
@@ -675,7 +796,8 @@ def paddingtrick_grad(op, grad):
     global _ENABLED_METHOD_CLASS, _GRAD_OVERRIDE_CHECKFLAG
     _GRAD_OVERRIDE_CHECKFLAG = 1
     
-    if _ENABLED_METHOD_CLASS is not None and getattr(_ENABLED_METHOD_CLASS, 'conv2d_grad_override', None):
+    if _ENABLED_METHOD_CLASS is not None and getattr(
+            _ENABLED_METHOD_CLASS, 'conv2d_grad_override', None):
         return _ENABLED_METHOD_CLASS.conv2d_grad_override(op, grad)
     else:
         return original_grad(op, grad)
@@ -686,7 +808,8 @@ def prr_grad(op, grad):
     global _ENABLED_METHOD_CLASS, _GRAD_OVERRIDE_CHECKFLAG
     _GRAD_OVERRIDE_CHECKFLAG = 1
     
-    if _ENABLED_METHOD_CLASS is not None and getattr(_ENABLED_METHOD_CLASS, 'maxpool_grad_override', None):
+    if _ENABLED_METHOD_CLASS is not None and getattr(
+            _ENABLED_METHOD_CLASS, 'maxpool_grad_override', None):
         return _ENABLED_METHOD_CLASS.maxpool_grad_override(op, grad)
     else:
         return original_grad(op, grad)
@@ -700,11 +823,16 @@ class DeepExplain(object):
         self.session = session
         self.graph = session.graph if graph is None else graph
         self.graph_context = self.graph.as_default()
-        self.override_context = self.graph.gradient_override_map(self.get_override_map())
+        self.override_context = self.graph.gradient_override_map(
+                self.get_override_map()
+                )
         self.keras_phase_placeholder = None
         self.context_on = False
         if self.session is None:
-            raise RuntimeError('DeepExplain: could not retrieve a session. Use DeepExplain(session=your_session).')
+            raise RuntimeError(
+                'DeepExplain: could not retrieve a session. ' 
+                'Use DeepExplain(session=your_session).'
+            )
 
     def __enter__(self):
         # Override gradient of all ops created in context
@@ -720,24 +848,41 @@ class DeepExplain(object):
 
     def explain(self, method, T, X, xs, **kwargs):
         if not self.context_on:
-            raise RuntimeError('Explain can be called only within a DeepExplain context.')
+            raise RuntimeError(
+                'Explain can be called only within a DeepExplain context.'
+            )
         global _ENABLED_METHOD_CLASS, _GRAD_OVERRIDE_CHECKFLAG
         self.method = method
         if self.method in attribution_methods:
             method_class, method_flag = attribution_methods[self.method]
         else:
-            raise RuntimeError('Method must be in %s' % list(attribution_methods.keys()))
-        # print('DeepExplain: running "%s" explanation method (%d)' % (self.method, method_flag))
+            raise RuntimeError(
+                'Method must be in %s' % list(attribution_methods.keys())
+            )
+        print(
+            'DeepExplain: running "%s" explanation method (%d)' 
+            % (self.method, method_flag)
+        )
         self._check_ops()
         _GRAD_OVERRIDE_CHECKFLAG = 0
 
         _ENABLED_METHOD_CLASS = method_class
-        method = _ENABLED_METHOD_CLASS(T, X, xs, self.session, self.keras_phase_placeholder, **kwargs)
+
+        method = _ENABLED_METHOD_CLASS(
+            T, X, xs, self.session, self.keras_phase_placeholder, **kwargs
+        )
+        
         result = method.run()
-        if issubclass(_ENABLED_METHOD_CLASS, GradientBasedMethod) and _GRAD_OVERRIDE_CHECKFLAG == 0:
-            warnings.warn('DeepExplain detected you are trying to use an attribution method that requires '
-                          'gradient override but the original gradient was used instead. You might have forgot to '
-                          '(re)create your graph within the DeepExlain context. Results are not reliable!')
+        if issubclass(
+                _ENABLED_METHOD_CLASS, 
+                GradientBasedMethod) and _GRAD_OVERRIDE_CHECKFLAG == 0:
+            warnings.warn(
+                'DeepExplain detected you are trying to use an attribution '
+                'method that requires gradient override but the original '
+                'gradient was used instead. You might have forgot to '
+                '(re)create your graph within the DeepExlain context. '
+                'Results are not reliable!'
+            )
         _ENABLED_METHOD_CLASS = None
         _GRAD_OVERRIDE_CHECKFLAG = 0
         self.keras_phase_placeholder = None
@@ -752,10 +897,11 @@ class DeepExplain(object):
 
     def _check_ops(self):
         """
-        Heuristically check if any op is in the list of unsupported activation functions.
-        This does not cover all cases where explanation methods would fail, and must be improved in the future.
-        Also, check if the placeholder named 'keras_learning_phase' exists in the graph. This is used by Keras
-         and needs to be passed in feed_dict.
+        Heuristically check if any op is in the list of unsupported 
+        activation functions. This does not cover all cases where explanation 
+        methods would fail, and must be improved in the future. Also, check if
+        the placeholder named 'keras_learning_phase' exists in the graph. 
+        This is used by Keras and needs to be passed in feed_dict.
         :return:
         """
         # g = tf.get_default_graph()
@@ -763,12 +909,10 @@ class DeepExplain(object):
         for op in g.get_operations():
             if len(op.inputs) > 0 and not op.name.startswith('gradients'):
                 if op.type in UNSUPPORTED_ACTIVATIONS:
-                    warnings.warn('Detected unsupported activation (%s). '
-                                  'This might lead to unexpected or wrong results.' % op.type)
+                    warnings.warn(
+                        'Detected unsupported activation (%s). '
+                        'This might lead to unexpected '
+                        'or wrong results.' % op.type
+                    )
             elif 'keras_learning_phase' in op.name:
                 self.keras_phase_placeholder = op.outputs[0]
-
-
-
-
-

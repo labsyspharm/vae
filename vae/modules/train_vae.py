@@ -31,10 +31,10 @@ from ..utils import (
 ###############################################################################
 # to run this script interactively on HMS o2 GPU partition:
 
-# srun --pty -p gpu_requeue -t 0-24:00 --gres=gpu:1 --mem=100G bash
+# srun --pty -p gpu_quad -t 0-24:00 --gres=gpu:1 --mem=50G bash
 
-# scontrol show node compute-gc-17-152 (to see specs for node)
-# nvidia-smi (to see specs for the resourced GPU(s))
+# to see specs for node: scontrol show node compute-gc-17-152 
+# to see specs for the resourced GPU(s): nvidia-smi
 
 # conda activate vae
 
@@ -294,14 +294,14 @@ def build_and_fit_model(img_shape, latent_dimension, learning_rate, training_epo
         )
 
         # load an arbitrary model (optional)
-        latest_checkpoint = (
-            '/n/scratch/users/g/gjb15/binary_patches/'
-            '5_train_vae/checkpoints/val_loss-0.00412-model.keras'
-        )
+        # latest_checkpoint = (
+        #     '/Users/greg/projects/vae-paper/src/input/'
+        #     'VAE9_VIG7/5_train_vae/val_loss-0.00083-model.keras'
+        # )
         
         print(f'Loading latest model at {latest_checkpoint}')
         print()
-        
+
         # load latest model
         vae = load_model(latest_checkpoint, compile=True, safe_mode=False) 
         

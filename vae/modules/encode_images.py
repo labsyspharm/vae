@@ -204,16 +204,16 @@ def PlotLatentSpace(reconstructions, zoom, X_encoded_embedded, X_decoded, y, cha
             # segmentation-based Leiden clustering
             # build cmap
             cmap = categorical_cmap(
-                numUniqueSamples=len(y['VAE9_VIG7'].unique()), 
+                numUniqueSamples=len(y['cluster_3d'].unique()), 
                 numCatagories=10, cmap='tab10', continuous=False
             )
 
             label_color_dict = dict(
-                zip(natsorted(y['VAE9_VIG7'].unique()), 
+                zip(natsorted(y['cluster_3d'].unique()), 
                     [tuple(i) for i in cmap.colors])
             )
 
-            if -1 in y['VAE9_VIG7'].unique():
+            if -1 in y['cluster_3d'].unique():
                 # make black the first color to specify
                 # cluster outliers (i.e. cluster -1 cells)
                 cmap = ListedColormap(
@@ -225,11 +225,11 @@ def PlotLatentSpace(reconstructions, zoom, X_encoded_embedded, X_decoded, y, cha
                 cmap = ListedColormap(cmap.colors[:-1])
 
             hue_dict = dict(
-                zip(natsorted(y['VAE9_VIG7'].unique()), 
-                    list(range(len(y['VAE9_VIG7'].unique()))))
+                zip(natsorted(y['cluster_3d'].unique()), 
+                    list(range(len(y['cluster_3d'].unique()))))
             )
 
-            c = [hue_dict[i] for i in y['VAE9_VIG7']]
+            c = [hue_dict[i] for i in y['cluster_3d']]
 
             plt.scatter(
                 X_encoded_embedded[:, 0], X_encoded_embedded[:, 1], 
@@ -238,7 +238,7 @@ def PlotLatentSpace(reconstructions, zoom, X_encoded_embedded, X_decoded, y, cha
             )
 
             legend_elements = []
-            for e, i in enumerate(natsorted(y['VAE9_VIG7'].unique())):
+            for e, i in enumerate(natsorted(y['cluster_3d'].unique())):
 
                 legend_elements.append(
                     Line2D([0], [0], marker='o', color='w', label=i,
@@ -952,12 +952,12 @@ def categorical_cmap(numUniqueSamples, numCatagories, cmap='tab10', continuous=F
         # ccolors[2] = np.array([0.17254901960784313, 0.6274509803921569, 0.17254901960784313])
 
         # for binary patch analysis
-        ccolors[0] = np.array([0.122, 0.467, 0.706])
-        ccolors[1] = np.array([0.682, 0.780, 0.910])
-        ccolors[2] = np.array([1.00, 0.733, 0.471])
-        ccolors[3] = np.array([0.598, 0.875, 0.543])
-        ccolors[4] = np.array([0.839, 0.153, 0.157])
-        ccolors[5] = np.array([0.0, 0.0, 0.0])
+        # ccolors[0] = np.array([0.122, 0.467, 0.706])
+        # ccolors[1] = np.array([0.682, 0.780, 0.910])
+        # ccolors[2] = np.array([1.00, 0.733, 0.471])
+        # ccolors[3] = np.array([0.598, 0.875, 0.543])
+        # ccolors[4] = np.array([0.839, 0.153, 0.157])
+        # ccolors[5] = np.array([0.0, 0.0, 0.0])
 
         # ccolors[0] = np.array([1.0, 1.0, 1.0])
         # ccolors[1] = np.array([1.0, 1.0, 1.0])
@@ -968,14 +968,14 @@ def categorical_cmap(numUniqueSamples, numCatagories, cmap='tab10', continuous=F
         
         # regular palette
         # use Okabe and Ito color-safe palette for first 6 colors
-        # ccolors[0] = np.array([0.91, 0.29, 0.235]) #E84A3C
-        # ccolors[1] = np.array([0.18, 0.16, 0.15]) #2E2926
-        # ccolors[0] = np.array([0.0, 0.447, 0.698, 1.0])  # blue
-        # ccolors[1] = np.array([0.902, 0.624, 0.0, 1.0])  # orange
-        # ccolors[2] = np.array([0.0, 0.620, 0.451, 1.0])  # bluish green
-        # ccolors[3] = np.array([0.8, 0.475, 0.655, 1.0])  # reddish purple
-        # ccolors[4] = np.array([0.941, 0.894, 0.259, 1.0])  # yellow
-        # ccolors[5] = np.array([0.835, 0.369, 0.0, 1.0])  # vermillion
+        ccolors[0] = np.array([0.91, 0.29, 0.235]) #E84A3C
+        ccolors[1] = np.array([0.18, 0.16, 0.15]) #2E2926
+        ccolors[0] = np.array([0.0, 0.447, 0.698, 1.0])  # blue
+        ccolors[1] = np.array([0.902, 0.624, 0.0, 1.0])  # orange
+        ccolors[2] = np.array([0.0, 0.620, 0.451, 1.0])  # bluish green
+        ccolors[3] = np.array([0.8, 0.475, 0.655, 1.0])  # reddish purple
+        ccolors[4] = np.array([0.941, 0.894, 0.259, 1.0])  # yellow
+        ccolors[5] = np.array([0.835, 0.369, 0.0, 1.0])  # vermillion
 
     cols = np.zeros((numCatagories * numSubcatagories, 3))
     for i, c in enumerate(ccolors):
@@ -1017,7 +1017,7 @@ def ENCODE_IMAGES(config):
 
     contrast_limits = yaml.safe_load(open(config.contrast_path))
 
-    # load previously saved encoder and decoders
+    # load previously saved encoder and decoder
     try:
         encoder = load_model(
             os.path.join(config.output_path, '5_train_vae/encoder.hdf5')
@@ -1217,6 +1217,8 @@ def ENCODE_IMAGES(config):
         window_size=config.window_size, std_dev=config.mask_std_dev
     )
 
+    # X_transform = X.astype('float')  # use for binary patches
+    
     dask_labels = da.from_array(labels.values, chunks=(X.chunksize[0],))
     dask_labels = dask_labels.reshape((-1, 1, 1, 1))
 
@@ -1227,10 +1229,10 @@ def ENCODE_IMAGES(config):
     )
     
     if config.masked_model:
-        print('Apply Gaussian vignette mask.')
+        print('Applying Gaussian vignette mask.')
         print()
         X_transform *= mask
-    
+
     ###########################################################################
     # encode images
     try:
@@ -1297,12 +1299,12 @@ def ENCODE_IMAGES(config):
         elif config.embedding_algorithm == 'UMAP':
             print('Computing UMAP embedding.')
             X_encoded_embedded = UMAP(
-                n_components=3,
-                n_neighbors=15,
+                n_components=2,
+                n_neighbors=25,
                 learning_rate=1.0,
                 output_metric='euclidean',
                 min_dist=0.1,
-                repulsion_strength=2,
+                repulsion_strength=1,
                 random_state=1,
                 n_epochs=1000,
                 init='spectral',
@@ -1369,8 +1371,6 @@ def ENCODE_IMAGES(config):
 
     print(np.unique(clustering.labels_))
     
-    sys.exit(0)
-    
     ###########################################################################
     # patches = pd.read_csv(
     #     '/n/scratch/users/g/gjb15/VAE9_VIG7_multi-tissue/test/combined/'
@@ -1422,212 +1422,212 @@ def ENCODE_IMAGES(config):
     #     filename='embedding_by_sample',
     #     save_dir=save_dir
     # )
-    
+
     # plot latent vectors colored according to prior clustering
-    # label_color_dict = PlotLatentSpace(
-    #     reconstructions=False,
-    #     zoom=None,
-    #     X_encoded_embedded=X_encoded_embedded,
-    #     X_decoded=None,
-    #     y=y,
-    #     channel_color_dict=None,
-    #     scatter_point_size=350000 / len(X_encoded_embedded),
-    #     filename='segmentation-based_leiden_clustering',
-    #     save_dir=save_dir
-    # )
-    
-    # REMOVE UNCLUSTERED CELLS (cluster -1)
-    # plot latent vectors colored by HDBSCAN clustering of latent space
-    # filter_indices = np.where(clustering.labels_ != -1)[0].tolist()
-    # X_encoded_embedded_filt = np.take(X_encoded_embedded, filter_indices, 0)
-    # clustering_labels = clustering.labels_[filter_indices]
-    
-    PlotLatentSpace(
+    label_color_dict = PlotLatentSpace(
         reconstructions=False,
         zoom=None,
         X_encoded_embedded=X_encoded_embedded,
         X_decoded=None,
-        y=clustering.labels_,
+        y=y,
         channel_color_dict=None,
-        scatter_point_size=144000 / len(X_encoded_embedded),
-        filename='embedding-based_hdbscan_clustering',
+        scatter_point_size=350000 / len(X_encoded_embedded),
+        filename='segmentation-based_leiden_clustering',
         save_dir=save_dir
     )
-
-    # reconstruct thumbnail images from latent vectors
-    X_decoded = DecodeVectors(
-        decoder=decoder, percentile_cutoffs=percentile_cutoffs, contrast_limits=contrast_limits,
-        X_encoded=X_encoded, X_seg=X_seg,
-        orig_input_dims=training_thumb_dims,
-        channel_color_dict=config.channel_colors,
-        intensity_multiplier=1.3
-    )
-
-    # initialize a numpy array to store reconstructed thumbnails
-    X_transform_rgb = np.empty(shape=(0, training_thumb_dims[0], training_thumb_dims[1], 3))
-    intensity_multiplier = 1.0
     
-    for e, transform in enumerate(X_transform):
+    # # REMOVE UNCLUSTERED CELLS (cluster -1)
+    # # plot latent vectors colored by HDBSCAN clustering of latent space
+    # # filter_indices = np.where(clustering.labels_ != -1)[0].tolist()
+    # # X_encoded_embedded_filt = np.take(X_encoded_embedded, filter_indices, 0)
+    # # clustering_labels = clustering.labels_[filter_indices]
+    
+    # PlotLatentSpace(
+    #     reconstructions=False,
+    #     zoom=None,
+    #     X_encoded_embedded=X_encoded_embedded,
+    #     X_decoded=None,
+    #     y=clustering.labels_,
+    #     channel_color_dict=None,
+    #     scatter_point_size=144000 / len(X_encoded_embedded),
+    #     filename='embedding-based_hdbscan_clustering',
+    #     save_dir=save_dir
+    # )
 
-        if e % 200 == 0:
-            print(e)
+    # # reconstruct thumbnail images from latent vectors
+    # X_decoded = DecodeVectors(
+    #     decoder=decoder, percentile_cutoffs=percentile_cutoffs, contrast_limits=contrast_limits,
+    #     X_encoded=X_encoded, X_seg=X_seg,
+    #     orig_input_dims=training_thumb_dims,
+    #     channel_color_dict=config.channel_colors,
+    #     intensity_multiplier=1.3
+    # )
+
+    # # initialize a numpy array to store reconstructed thumbnails
+    # X_transform_rgb = np.empty(shape=(0, training_thumb_dims[0], training_thumb_dims[1], 3))
+    # intensity_multiplier = 1.0
+    
+    # for e, transform in enumerate(X_transform):
+
+    #     if e % 200 == 0:
+    #         print(e)
         
-        reconstructed_img = transform.reshape(
-            training_thumb_dims[0], training_thumb_dims[1], training_thumb_dims[2]
-        )
+    #     reconstructed_img = transform.reshape(
+    #         training_thumb_dims[0], training_thumb_dims[1], training_thumb_dims[2]
+    #     )
 
-        # undo mask
-        reconstructed_img /= mask[0, :, :, :]
+    #     # undo mask
+    #     reconstructed_img /= mask[0, :, :, :]
 
-        # initialize image overlay
-        overlay = np.zeros((reconstructed_img.shape[0], reconstructed_img.shape[1]))
+    #     # initialize image overlay
+    #     overlay = np.zeros((reconstructed_img.shape[0], reconstructed_img.shape[1]))
 
-        # add centroid point at the center of the image
-        # overlay[
-        #     int(reconstructed_img.shape[0] / 2):int(reconstructed_img.shape[0] / 2) + 1,
-        #     int(reconstructed_img.shape[1] / 2):int(reconstructed_img.shape[1] / 2) + 1
-        # ] = 1
+    #     # add centroid point at the center of the image
+    #     # overlay[
+    #     #     int(reconstructed_img.shape[0] / 2):int(reconstructed_img.shape[0] / 2) + 1,
+    #     #     int(reconstructed_img.shape[1] / 2):int(reconstructed_img.shape[1] / 2) + 1
+    #     # ] = 1
 
-        overlay = gray2rgb(overlay)
+    #     overlay = gray2rgb(overlay)
 
-        for name, (ch, color) in config.channel_colors.items():
+    #     for name, (ch, color) in config.channel_colors.items():
 
-            channel_slice = reconstructed_img[:, :, ch]
+    #         channel_slice = reconstructed_img[:, :, ch]
 
-            channel_slice = reverse_processing(
-                        percentile_cutoffs, channel_slice, name, contrast_limits
-                    )
+    #         channel_slice = reverse_processing(
+    #                     percentile_cutoffs, channel_slice, name, contrast_limits
+    #                 )
 
-            # apply different size mask for viz only
-            # channel_slice *= mask[0, :, :, 0]
+    #         # apply different size mask for viz only
+    #         # channel_slice *= mask[0, :, :, 0]
 
-            channel_slice = gray2rgb(channel_slice)
+    #         channel_slice = gray2rgb(channel_slice)
 
-            channel_slice = channel_slice * intensity_multiplier
+    #         channel_slice = channel_slice * intensity_multiplier
 
-            overlay += channel_slice.compute() * to_rgb(color)
+    #         overlay += channel_slice.compute() * to_rgb(color)
 
-        # overlay += seg_slice.compute()
+    #     # overlay += seg_slice.compute()
 
-        overlay = overlay.reshape((1, training_thumb_dims[0], training_thumb_dims[1], 3))
+    #     overlay = overlay.reshape((1, training_thumb_dims[0], training_thumb_dims[1], 3))
 
-        X_transform_rgb = np.concatenate((X_transform_rgb, overlay), axis=0)
+    #     X_transform_rgb = np.concatenate((X_transform_rgb, overlay), axis=0)
 
-    # plot latent vectors represented as their learned representations
-    PlotLatentSpace(
-        reconstructions=True,
-        zoom=0.5,
-        X_encoded_embedded=X_encoded_embedded,
-        X_decoded=X_transform_rgb,  # X_decoded,
-        y=y['cluster_3d'],
-        channel_color_dict=config.channel_colors,
-        scatter_point_size=144000 / len(X_encoded_embedded),
-        filename='image_patches',
-        save_dir=save_dir
-    )
+    # # plot latent vectors represented as their learned representations
+    # PlotLatentSpace(
+    #     reconstructions=True,
+    #     zoom=0.5,
+    #     X_encoded_embedded=X_encoded_embedded,
+    #     X_decoded=X_transform_rgb,  # X_decoded,
+    #     y=y['cluster_3d'],
+    #     channel_color_dict=config.channel_colors,
+    #     scatter_point_size=144000 / len(X_encoded_embedded),
+    #     filename='image_patches',
+    #     save_dir=save_dir
+    # )
 
-    # display learned representations of input thumbnail images
-    if config.latent_dimension == 2:
+    # # display learned representations of input thumbnail images
+    # if config.latent_dimension == 2:
 
-        InterpolationGrid(
-            orig_input_dims=training_thumb_dims,
-            grid_size=50,
-            X_encoded=X_encoded,
-            y=y['cluster_3d'],
-            decoder=decoder,
-            label_color_dict=label_color_dict,
-            channel_color_dict=config.channel_colors,
-            frac_of_scatter_points=1.0,
-            scatter_point_size=144000 / len(X_encoded_embedded),
-            make_sample_sizes_equal=False,
-            img_brightness_multiplier=1.2,
-            scatter_point_alpha=1.0,
-            save_dir=save_dir
-        )
+    #     InterpolationGrid(
+    #         orig_input_dims=training_thumb_dims,
+    #         grid_size=50,
+    #         X_encoded=X_encoded,
+    #         y=y['cluster_3d'],
+    #         decoder=decoder,
+    #         label_color_dict=label_color_dict,
+    #         channel_color_dict=config.channel_colors,
+    #         frac_of_scatter_points=1.0,
+    #         scatter_point_size=144000 / len(X_encoded_embedded),
+    #         make_sample_sizes_equal=False,
+    #         img_brightness_multiplier=1.2,
+    #         scatter_point_alpha=1.0,
+    #         save_dir=save_dir
+    #     )
 
-    # get input and output images of lassoed latent vectors for targeted analysis of vectors 
-    if config.lasso_vector_tool:
-        LassoVectors(
-            decoder=decoder,
-            clustering_labels=clustering.labels_,
-            percentile_cutoffs=percentile_cutoffs,
-            contrast_limits=contrast_limits,
-            orig_input_dims=training_thumb_dims,
-            imgs_instead_of_points=True,
-            zoom=0.5,
-            X=X_transform,
-            X_seg=X_seg,
-            X_encoded=X_encoded,
-            X_encoded_embedded=X_encoded_embedded,
-            X_decoded=X_decoded,
-            y=y['cluster_3d'],
-            numColumns=10,
-            intensity_multiplier=1.1,
-            label_color_dict=label_color_dict,
-            channel_color_dict=config.channel_colors,
-            max_examples=1000,
-            thumbnail_font_size=3.0,
-            save_dir=save_dir,
-            mask=mask,
-            undo_mask=False
-        )
+    # # get input and output images of lassoed latent vectors for targeted analysis of vectors 
+    # if config.lasso_vector_tool:
+    #     LassoVectors(
+    #         decoder=decoder,
+    #         clustering_labels=clustering.labels_,
+    #         percentile_cutoffs=percentile_cutoffs,
+    #         contrast_limits=contrast_limits,
+    #         orig_input_dims=training_thumb_dims,
+    #         imgs_instead_of_points=True,
+    #         zoom=0.5,
+    #         X=X_transform,
+    #         X_seg=X_seg,
+    #         X_encoded=X_encoded,
+    #         X_encoded_embedded=X_encoded_embedded,
+    #         X_decoded=X_decoded,
+    #         y=y['cluster_3d'],
+    #         numColumns=10,
+    #         intensity_multiplier=1.1,
+    #         label_color_dict=label_color_dict,
+    #         channel_color_dict=config.channel_colors,
+    #         max_examples=1000,
+    #         thumbnail_font_size=3.0,
+    #         save_dir=save_dir,
+    #         mask=mask,
+    #         undo_mask=False
+    #     )
 
-    PlotReconstructedImages(
-        orig_input_dims=training_thumb_dims,
-        percentile_cutoffs=percentile_cutoffs,
-        contrast_limits=contrast_limits,
-        decoder=decoder,
-        X=X_transform[0:100],
-        X_seg=X_seg[0:100],
-        X_encoded=X_encoded[0:100],
-        y=y['cluster_3d'][0:100],
-        numColumns=10,
-        label_color_dict=label_color_dict,
-        channel_color_dict=config.channel_colors,
-        intensity_multiplier=1.1,
-        thumbnail_font_size=3.0,
-        filename='learned_representations',
-        save_dir=save_dir,
-        mask=mask,
-        undo_mask=True
-    )
+    # PlotReconstructedImages(
+    #     orig_input_dims=training_thumb_dims,
+    #     percentile_cutoffs=percentile_cutoffs,
+    #     contrast_limits=contrast_limits,
+    #     decoder=decoder,
+    #     X=X_transform[0:100],
+    #     X_seg=X_seg[0:100],
+    #     X_encoded=X_encoded[0:100],
+    #     y=y['cluster_3d'][0:100],
+    #     numColumns=10,
+    #     label_color_dict=label_color_dict,
+    #     channel_color_dict=config.channel_colors,
+    #     intensity_multiplier=1.1,
+    #     thumbnail_font_size=3.0,
+    #     filename='learned_representations',
+    #     save_dir=save_dir,
+    #     mask=mask,
+    #     undo_mask=True
+    # )
        
-    # compute mean squared error between thumbnail image inputs and outputs
-    (average_error,
-        errors,
-        X_outliers,
-        X_outliers_seg,
-        X_encoded_outliers,
-        y_outliers,
-        outlier_idxs) = mse(
-            orig_input_dims=training_thumb_dims,
-            decoder=decoder,
-            X=X_transform,
-            X_seg=X_seg,
-            X_encoded=X_encoded,
-            y=y['cluster_3d'],
-            mse_percentile_cutoff=99,
-            filename='mse_dist',
-            save_dir=save_dir
-    )
+    # # compute mean squared error between thumbnail image inputs and outputs
+    # (average_error,
+    #     errors,
+    #     X_outliers,
+    #     X_outliers_seg,
+    #     X_encoded_outliers,
+    #     y_outliers,
+    #     outlier_idxs) = mse(
+    #         orig_input_dims=training_thumb_dims,
+    #         decoder=decoder,
+    #         X=X_transform,
+    #         X_seg=X_seg,
+    #         X_encoded=X_encoded,
+    #         y=y['cluster_3d'],
+    #         mse_percentile_cutoff=99,
+    #         filename='mse_dist',
+    #         save_dir=save_dir
+    # )
 
-    # get input thumbnails associated with poor learned reconstruction
-    PlotReconstructedImages(
-        orig_input_dims=training_thumb_dims,
-        percentile_cutoffs=percentile_cutoffs,
-        contrast_limits=contrast_limits,
-        decoder=decoder,
-        X=X_outliers,
-        X_seg=X_outliers_seg,
-        X_encoded=X_encoded_outliers,
-        y=y_outliers,
-        numColumns=10,
-        label_color_dict=label_color_dict,
-        channel_color_dict=config.channel_colors,
-        intensity_multiplier=1.0,
-        thumbnail_font_size=3.0,
-        filename='outliers',
-        save_dir=save_dir,
-        mask=mask,
-        undo_mask=False
-    )
+    # # get input thumbnails associated with poor learned reconstruction
+    # PlotReconstructedImages(
+    #     orig_input_dims=training_thumb_dims,
+    #     percentile_cutoffs=percentile_cutoffs,
+    #     contrast_limits=contrast_limits,
+    #     decoder=decoder,
+    #     X=X_outliers,
+    #     X_seg=X_outliers_seg,
+    #     X_encoded=X_encoded_outliers,
+    #     y=y_outliers,
+    #     numColumns=10,
+    #     label_color_dict=label_color_dict,
+    #     channel_color_dict=config.channel_colors,
+    #     intensity_multiplier=1.0,
+    #     thumbnail_font_size=3.0,
+    #     filename='outliers',
+    #     save_dir=save_dir,
+    #     mask=mask,
+    #     undo_mask=False
+    # )

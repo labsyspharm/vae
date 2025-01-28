@@ -1,5 +1,5 @@
-{% set name = "vae" %}
-{% set version = "0.0.1" %}
+{% set name = "MORPHAEUS" %}
+{% set version = "0.0.3" %}
 
 package:
   name: "{{ name|lower }}"
@@ -7,6 +7,7 @@ package:
 
 source:
   git_url: https://github.com/gjbaker/vae.git
+  # git_url: https://github.com/labsyspharm/vae
   git_rev: main
 build:
   number: 0
@@ -36,7 +37,6 @@ requirements:
     - pyyaml
     - seaborn
     - tensorflow=2.15.0  # avoiding "from tensorflow.keras import XX" errors with tf >= 2.16 and making compatible with available o2 GPU CUDA modules.
-    - tensorflow-gpu
     - cellcutter
     - opencv
     - dask
@@ -49,7 +49,7 @@ about:
   home: https://github.com/labsyspharm/vae
   license: MIT
   license_family: BSD
-  summary: "Generate thumbnail images of cells from a multi-channel TIFF image, train a VAE model, and perform clustering on latent space vectors."
+  summary: "Generate cropped image patches from a multi-channel TIF image, train a VAE model, and perform clustering on latent space image patch encodings."
   description-file: README.md
 
 extra:
