@@ -14,7 +14,7 @@ def main(argv=sys.argv):
     epilog = 'Pipeline modules:\n'
     epilog += '\n'.join(f"    {n}" for n in components.pipeline_module_names)
     parser = argparse.ArgumentParser(
-        description='Train a VAE model on image patches and cluster latent vectors',
+        description='Train a VAE model on cropped image patches and cluster their latent encodings',
         epilog=epilog,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
