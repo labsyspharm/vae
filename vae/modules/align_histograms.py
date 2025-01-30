@@ -111,6 +111,7 @@ def save_figs(dpi=300, format='pdf', out_dir=None, prefix=None, close=True):
 
 max_pixels = 2_000_000
 
+# sample names here must match those specified in 1_cellcutter_input CSV files
 thresholds = {
     ('CRC097', 'anti_CD3'): 2506,
     ('CRC102', 'anti_CD3'): 3173,
@@ -204,6 +205,7 @@ def ALIGN_HISTOGRAMS(config):
     Poly = np.polynomial.Polynomial
     np.random.seed(42)
     
+    # sample names here must match those specified in 1_cellcutter_input CSV files
     # reference image must come first
     zarrs = {
         'CRC097': '/n/scratch/users/g/gjb15/VAE9_VIG7_multi-tissue/test/'

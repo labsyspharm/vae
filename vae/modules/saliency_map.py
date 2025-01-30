@@ -419,11 +419,15 @@ def SALIENCY_MAP(config):
         fig = plt.figure(figsize=(11, 3.9))  # VAE9_VIG7
         # fig = plt.figure(figsize=(9, 2.7))  # VAE30
         
-        rows, cols = (3, 8)  # VAE9_VIG7   
+        rows_rounded_up = len(concepts) // 8 + bool(len(concepts) % 8)
+        height_ratios = [1]*rows_rounded_up
+        
+        rows, cols = (rows_rounded_up, 8)
+        # rows, cols = (3, 8)  # VAE9_VIG7   
         # rows, cols = (2, 6)  # VAE30
         
         outer_gs = gridspec.GridSpec(
-            rows, cols, height_ratios=[1, 1, 1], hspace=0.1, wspace=0.7
+            rows, cols, height_ratios=height_ratios, hspace=0.1, wspace=0.7
         )  # VAE9_VIG7
         # outer_gs = gridspec.GridSpec(
         #     rows, cols, height_ratios=[1, 1], hspace=0.1, wspace=0.7

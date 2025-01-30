@@ -998,636 +998,639 @@ def categorical_cmap(numUniqueSamples, numCatagories, cmap='tab10', continuous=F
 
 def ENCODE_IMAGES(config):
 
-    training_thumb_dims = (
-        config.window_size, config.window_size, len(config.tif_channels)
-    )
+    if not os.path.isfile(
+      os.path.join(config.output_path, 'checkpoints/TRAIN_VAE.txt')):
 
-    # read histogram scaling functions computed in align_histograms.py
-    with open(
-      os.path.join(
-       config.output_path, 
-       '4_histogram_alignment/limits.pkl'), 'rb') as handle:
-        limits = pickle.load(handle)
-
-    save_dir = os.path.join(
-        config.output_path, f'6_latent_space_LD{config.latent_dimension}'
-    )
-    if not os.path.exists(save_dir):
-        os.mkdir(save_dir)
-
-    contrast_limits = yaml.safe_load(open(config.contrast_path))
-
-    # load previously saved encoder and decoder
-    try:
-        encoder = load_model(
-            os.path.join(config.output_path, '5_train_vae/encoder.hdf5')
+        training_thumb_dims = (
+            config.window_size, config.window_size, len(config.tif_channels)
         )
-    except OSError:
-        print('Encoder not found.')
-        sys.exit()
 
-    try:
-        decoder = load_model(
-            os.path.join(config.output_path, '5_train_vae/decoder.hdf5')
+        # read histogram scaling functions computed in align_histograms.py
+        with open(
+          os.path.join(
+           config.output_path, 
+           '4_histogram_alignment/limits.pkl'), 'rb') as handle:
+            limits = pickle.load(handle)
+
+        save_dir = os.path.join(
+            config.output_path, f'6_latent_space_LD{config.latent_dimension}'
         )
-    except OSError:
-        print('Decoder not found.')
-        sys.exit()
+        if not os.path.exists(save_dir):
+            os.mkdir(save_dir)
 
-    ###########################################################################
+        contrast_limits = yaml.safe_load(open(config.contrast_path))
 
-    combo_dir = os.path.join(save_dir, 'combined_zarr')
-    combo_dir_seg = os.path.join(save_dir, 'combined_zarr_seg')
+        # load previously saved encoder and decoder
+        try:
+            encoder = load_model(
+                os.path.join(config.output_path, '5_train_vae/encoder.hdf5')
+            )
+        except OSError:
+            print('Encoder not found.')
+            sys.exit()
 
-    if not os.path.exists(combo_dir):
-        os.makedirs(combo_dir)
+        try:
+            decoder = load_model(
+                os.path.join(config.output_path, '5_train_vae/decoder.hdf5')
+            )
+        except OSError:
+            print('Decoder not found.')
+            sys.exit()
 
-        print('Combined data does not exist, creating...')
+        ###########################################################################
+
+        combo_dir = os.path.join(save_dir, 'combined_zarr')
+        combo_dir_seg = os.path.join(save_dir, 'combined_zarr_seg')
+
+        if not os.path.exists(combo_dir):
+            os.makedirs(combo_dir)
+
+            print('Combined data does not exist, creating...')
+            print()
+            
+            # read training thumbnails (16-bit unsigned integer format)
+            z1_train_path = os.path.join(
+                config.output_path,
+                f'2_cellcutter_output_win{config.window_size}/'
+                f'train_thumbnails_{config.window_size}.zip'
+            )
+            store = zarr.ZipStore(z1_train_path, mode='r')
+            X_train = zarr.open(store=store)
+
+            # read validation thumbnails (16-bit unsigned integer format)
+            z1_validate_path = os.path.join(
+                config.output_path,
+                f'2_cellcutter_output_win{config.window_size}'
+                f'/validate_thumbnails_{config.window_size}.zip'
+            )
+            store = zarr.ZipStore(z1_validate_path, mode='r')
+            X_validate = zarr.open(store=store)
+
+            # read test thumbnails (16-bit unsigned integer format)
+            z1_test_path = os.path.join(
+                config.output_path,
+                f'2_cellcutter_output_win{config.window_size}'
+                f'/test_thumbnails_{config.window_size}.zip'
+            )
+            store = zarr.ZipStore(z1_test_path, mode='r')
+            X_test = zarr.open(store=store)
+
+            # initialize combo zarr to store combined train, validate, test data
+            # (have been cutting cells in cellcutter at 1 cell per chunk for 
+            # efficient indexing during model training with shuffling, which
+            # requires random-access indexing. Rechunking the number of cells per 
+            # chunk here for efficient image patch encoding.)
+            X_combo = zarr.open(
+                combo_dir,
+                mode='w',
+                shape=(X_train.shape[0], X_train.shape[1], X_train.shape[2], 
+                       X_train.shape[3]),
+                chunks=(X_train.chunks[0], 200, X_train.chunks[2], 
+                        X_train.chunks[3]),
+                compressor=X_train.compressor, dtype=X_train.dtype
+            )
+            
+            X_combo[:] = X_train
+            X_combo.append(X_validate, axis=1)
+            X_combo.append(X_test, axis=1)
+
+        if not os.path.exists(combo_dir_seg):
+            os.makedirs(combo_dir_seg)
+
+            print('Combined segmentation outlines does not exist, creating...')
+            print()
+            
+            # read seg. thumbnails for training data (16-bit unsigned int)
+            z1_train_path_seg = os.path.join(
+                config.output_path,
+                f'2_cellcutter_output_win{config.window_size}'
+                f'/train_thumbnails_{config.window_size}_seg.zip'
+            )
+            store = zarr.ZipStore(z1_train_path_seg, mode='r')
+            X_train_seg = zarr.open(store=store)
+
+            # read seg. thumbnails for validation data (16-bit unsigned int)
+            z1_validate_path_seg = os.path.join(
+                config.output_path,
+                f'2_cellcutter_output_win{config.window_size}'
+                f'/validate_thumbnails_{config.window_size}_seg.zip'
+            )
+            store = zarr.ZipStore(z1_validate_path_seg, mode='r')
+            X_validate_seg = zarr.open(store=store)
+
+            # read seg. thumbnails for test data (16-bit unsigned int)
+            z1_test_path_seg = os.path.join(
+                config.output_path,
+                f'2_cellcutter_output_win{config.window_size}'
+                f'/test_thumbnails_{config.window_size}_seg.zip'
+            )
+            store = zarr.ZipStore(z1_test_path_seg, mode='r')
+            X_test_seg = zarr.open(store=store)
+
+            # initialize combo zarr to store combined train, validate, test data
+            X_combo_seg = zarr.open(
+                combo_dir_seg,
+                mode='w',
+                shape=(
+                    X_train_seg.shape[0], X_train_seg.shape[1], 
+                    X_train_seg.shape[2], X_train_seg.shape[3]
+                ),
+                chunks=(
+                    X_train_seg.chunks[0], 200, X_train_seg.chunks[2],
+                    X_train_seg.chunks[3]
+                ),
+                compressor=X_train_seg.compressor, dtype=X_train_seg.dtype
+            )
+            
+            X_combo_seg[:] = X_train_seg
+            X_combo_seg.append(X_validate_seg, axis=1)
+            X_combo_seg.append(X_test_seg, axis=1)
+        
+        ###########################################################################
+
+        if config.cluster_full_dataset:
+            
+            print('Working with combined training, validation, and test data.')
+            print()
+
+            # read combined thumbnails
+            X = zarr.open(combo_dir)
+            X = transposeZarr(z=X)
+            
+            # read combined thumbnails
+            X_seg = zarr.open(combo_dir_seg)
+            X_seg = transposeZarr(z=X_seg)
+
+            # read training labels
+            y_train = pd.read_csv(
+                os.path.join(config.output_path, '1_cellcutter_input/train.csv')
+            )
+
+            # read validation labels
+            y_validate = pd.read_csv(
+                os.path.join(config.output_path, '1_cellcutter_input/validate.csv')
+            )
+
+            # read test labels
+            y_test = pd.read_csv(
+                os.path.join(config.output_path, '1_cellcutter_input/test.csv')
+            )
+
+            # combine labels for train, validate, and test data
+            y = pd.concat([y_train, y_validate, y_test], axis=0)
+            labels = y['Sample']
+
+        else:  # take a sample of test thumbnail data for analysis
+
+            # read test thumbnails (16-bit unsigned integer format)
+            z1_test_path = os.path.join(
+                config.output_path,
+                f'2_cellcutter_output_win{config.window_size}'
+                f'/test_thumbnails_{config.window_size}.zip'
+            )
+            store = zarr.ZipStore(z1_test_path, mode='r')
+            X_test = zarr.open(store=store)
+            X = transposeZarr(z=X_test)
+
+            # computing for processing efficiency, large clustering_sample_sizes
+            # not able to fit in memory, may need to rechunk 
+            X = X[0:config.clustering_sample_size].compute()  
+
+            # read segmentation thumbnails for test data (16-bit unsigned integer)
+            z1_test_path_seg = os.path.join(
+                config.output_path,
+                f'2_cellcutter_output_win{config.window_size}'
+                f'/test_thumbnails_{config.window_size}_seg.zip'
+            )
+            store = zarr.ZipStore(z1_test_path_seg, mode='r')
+            X_test_seg = zarr.open(store=store)
+            X_seg = transposeZarr(z=X_test_seg)
+            X_seg = X_seg[0:config.clustering_sample_size].compute()
+
+            # read test labels
+            y_test = pd.read_csv(
+                os.path.join(config.output_path, '1_cellcutter_input/test.csv')
+            )
+            y = y_test[0:config.clustering_sample_size].copy()
+            labels = y['Sample']
+        
+        ###########################################################################
+
+        mask, vmin, vmax = compute_vignette_mask(
+            window_size=config.window_size, std_dev=config.mask_std_dev
+        )
+
+        # X_transform = X.astype('float')  # use for binary patches
+        
+        dask_labels = da.from_array(labels.values, chunks=(X.chunksize[0],))
+        dask_labels = dask_labels.reshape((-1, 1, 1, 1))
+
+        print('Aligning histograms.')
         print()
-        
-        # read training thumbnails (16-bit unsigned integer format)
-        z1_train_path = os.path.join(
-            config.output_path,
-            f'2_cellcutter_output_win{config.window_size}/'
-            f'train_thumbnails_{config.window_size}.zip'
-        )
-        store = zarr.ZipStore(z1_train_path, mode='r')
-        X_train = zarr.open(store=store)
-
-        # read validation thumbnails (16-bit unsigned integer format)
-        z1_validate_path = os.path.join(
-            config.output_path,
-            f'2_cellcutter_output_win{config.window_size}'
-            f'/validate_thumbnails_{config.window_size}.zip'
-        )
-        store = zarr.ZipStore(z1_validate_path, mode='r')
-        X_validate = zarr.open(store=store)
-
-        # read test thumbnails (16-bit unsigned integer format)
-        z1_test_path = os.path.join(
-            config.output_path,
-            f'2_cellcutter_output_win{config.window_size}'
-            f'/test_thumbnails_{config.window_size}.zip'
-        )
-        store = zarr.ZipStore(z1_test_path, mode='r')
-        X_test = zarr.open(store=store)
-
-        # initialize combo zarr to store combined train, validate, test data
-        # (have been cutting cells in cellcutter at 1 cell per chunk for 
-        # efficient indexing during model training with shuffling, which
-        # requires random-access indexing. Rechunking the number of cells per 
-        # chunk here for efficient image patch encoding.)
-        X_combo = zarr.open(
-            combo_dir,
-            mode='w',
-            shape=(X_train.shape[0], X_train.shape[1], X_train.shape[2], 
-                   X_train.shape[3]),
-            chunks=(X_train.chunks[0], 200, X_train.chunks[2], 
-                    X_train.chunks[3]),
-            compressor=X_train.compressor, dtype=X_train.dtype
+        X_transform = da.map_blocks(
+            align_histograms, X, dask_labels, limits, dtype=np.float32,
         )
         
-        X_combo[:] = X_train
-        X_combo.append(X_validate, axis=1)
-        X_combo.append(X_test, axis=1)
+        if config.masked_model:
+            print('Applying Gaussian vignette mask.')
+            print()
+            X_transform *= mask
 
-    if not os.path.exists(combo_dir_seg):
-        os.makedirs(combo_dir_seg)
-
-        print('Combined segmentation outlines does not exist, creating...')
-        print()
+        ###########################################################################
+        # encode images
+        try:
+            X_encoded = np.load(
+                os.path.join(
+                    save_dir, 
+                    f'{os.path.basename(config.output_path)}_encodings.npy')
+            )
+            assert X_encoded.shape[0] == X_transform.shape[0]
         
-        # read seg. thumbnails for training data (16-bit unsigned int)
-        z1_train_path_seg = os.path.join(
-            config.output_path,
-            f'2_cellcutter_output_win{config.window_size}'
-            f'/train_thumbnails_{config.window_size}_seg.zip'
-        )
-        store = zarr.ZipStore(z1_train_path_seg, mode='r')
-        X_train_seg = zarr.open(store=store)
+        except (FileNotFoundError, AssertionError):
+            print('Encoding images...')
 
-        # read seg. thumbnails for validation data (16-bit unsigned int)
-        z1_validate_path_seg = os.path.join(
-            config.output_path,
-            f'2_cellcutter_output_win{config.window_size}'
-            f'/validate_thumbnails_{config.window_size}_seg.zip'
-        )
-        store = zarr.ZipStore(z1_validate_path_seg, mode='r')
-        X_validate_seg = zarr.open(store=store)
+            X_encoded = encoder.predict(X_transform, batch_size=32)
 
-        # read seg. thumbnails for test data (16-bit unsigned int)
-        z1_test_path_seg = os.path.join(
-            config.output_path,
-            f'2_cellcutter_output_win{config.window_size}'
-            f'/test_thumbnails_{config.window_size}_seg.zip'
-        )
-        store = zarr.ZipStore(z1_test_path_seg, mode='r')
-        X_test_seg = zarr.open(store=store)
+            np.save(
+                os.path.join(
+                    save_dir, f'{os.path.basename(config.output_path)}_encodings'),
+                X_encoded
+            )
 
-        # initialize combo zarr to store combined train, validate, test data
-        X_combo_seg = zarr.open(
-            combo_dir_seg,
-            mode='w',
-            shape=(
-                X_train_seg.shape[0], X_train_seg.shape[1], 
-                X_train_seg.shape[2], X_train_seg.shape[3]
-            ),
-            chunks=(
-                X_train_seg.chunks[0], 200, X_train_seg.chunks[2],
-                X_train_seg.chunks[3]
-            ),
-            compressor=X_train_seg.compressor, dtype=X_train_seg.dtype
+            temp = pd.DataFrame(X_encoded)
+            temp.columns = [f'vae_{i}' for i in temp.columns]
+            x_encoded_df = pd.concat(
+                [y['CellID'].reset_index(drop=True), pd.DataFrame(temp)], axis=1)
+            x_encoded_df.to_csv(
+                os.path.join(
+                    save_dir, 
+                    f'{os.path.basename(config.output_path)}_encodings.csv'), 
+                index=False
+            )
+
+        # X_decoded = DecodeVectors(
+        #     decoder=decoder, percentile_cutoffs=percentile_cutoffs, 
+        #     contrast_limits=contrast_limits,
+        #     X_encoded=X_encoded, X_seg=X_seg,
+        #     orig_input_dims=training_thumb_dims,
+        #     channel_color_dict=config.channel_colors,
+        #     intensity_multiplier=1.3
+        # )
+
+        ###########################################################################
+        # embed latent vectors if they are greater than 2D
+
+        embedding_path = os.path.join(save_dir, 'embedding.npy')
+
+        if (config.latent_dimension > 2) and not os.path.exists(embedding_path):
+
+            startTime = datetime.now()
+
+            print('Embedding data...')
+
+            if config.embedding_algorithm == 'TSNE':
+                print('Computing TSNE embedding.')
+                X_encoded_embedded = TSNE(
+                    n_components=2,
+                    perplexity=27,
+                    early_exaggeration=19,
+                    learning_rate=200.0,
+                    metric='euclidean',
+                    random_state=5,
+                    init='pca', n_jobs=-1).fit_transform(X_encoded)
+
+            elif config.embedding_algorithm == 'UMAP':
+                print('Computing UMAP embedding.')
+                X_encoded_embedded = UMAP(
+                    n_components=2,
+                    n_neighbors=25,
+                    learning_rate=1.0,
+                    output_metric='euclidean',
+                    min_dist=0.1,
+                    repulsion_strength=1,
+                    random_state=1,
+                    n_epochs=1000,
+                    init='spectral',
+                    metric='euclidean',
+                    metric_kwds=None,
+                    output_metric_kwds=None,
+                    n_jobs=-1,
+                    low_memory=False,
+                    spread=1.0,
+                    local_connectivity=1.0,
+                    set_op_mix_ratio=0.5,
+                    negative_sample_rate=5,
+                    transform_queue_size=4.0,
+                    a=None,
+                    b=None,
+                    angular_rp_forest=False,
+                    target_n_neighbors=-1,
+                    target_metric='categorical',
+                    target_metric_kwds=None,
+                    target_weight=0.5,
+                    transform_seed=42,
+                    transform_mode='embedding',
+                    force_approximation_algorithm=False,
+                    verbose=False,
+                    unique=False,
+                    densmap=False,
+                    dens_lambda=2.0,
+                    dens_frac=0.6,
+                    dens_var_shift=0.1,
+                    disconnection_distance=None,
+                    output_dens=False).fit_transform(X_encoded)
+
+                print('Embedding completed in ' + str(datetime.now() - startTime))
+
+            # save embedding
+            np.save(os.path.join(save_dir, 'embedding'), X_encoded_embedded)
+
+        elif (config.latent_dimension > 2) and os.path.exists(embedding_path):
+            print('Loading saved embedding.')
+
+            # load previously saved embedding
+            X_encoded_embedded = np.load(embedding_path)
+
+        else:
+            # simply assign the 2D X_encoded the variable X_encoded_embedded
+            X_encoded_embedded = X_encoded.copy()
+
+        ###########################################################################
+     
+        # cluster the data with HDBSCAN
+        print(f'Minimum_cluster_size is {config.hdbscan_min_cluster_size}')
+
+        clustering = hdbscan.HDBSCAN(
+            min_cluster_size=config.hdbscan_min_cluster_size, min_samples=None,
+            metric='euclidean', alpha=1.0, p=None, algorithm='best',
+            leaf_size=40,
+            memory=Memory(location=None),
+            approx_min_span_tree=True,
+            gen_min_span_tree=False, core_dist_n_jobs=4,
+            cluster_selection_method='eom',
+            allow_single_cluster=False,
+            prediction_data=False,
+            match_reference_implementation=False).fit(X_encoded_embedded)
+
+        print(np.unique(clustering.labels_))
+        
+        ###########################################################################
+        # patches = pd.read_csv(
+        #     '/n/scratch/users/g/gjb15/VAE9_VIG7_multi-tissue/test/combined/'
+        #     '6_latent_space_LD412/leiden_out_nn20_r2.5/'
+        #     'combined_encodings-patches.csv'
+        # )
+        
+        # plot latent vectors colored by high-dimensional Leiden clustering
+        # (np.array call is for function to recognize input as VAE clustering)
+        
+        # label_color_dict = PlotLatentSpace(
+        #     reconstructions=False,
+        #     zoom=None,
+        #     X_encoded_embedded=X_encoded_embedded,
+        #     X_decoded=None,
+        #     y=np.array(patches['Cluster'][patches['CellID'].isin(y['CellID'])]),  
+        #     channel_color_dict=None,
+        #     scatter_point_size=270000 / len(X_encoded_embedded),
+        #     filename='vector-based_leiden_clustering',
+        #     save_dir=save_dir
+        # )
+
+        # shuffle data to scramble sample labels
+        # res1 = y[y['Sample'].isin(['CRC097', 'CRC102'])]
+        # res2 = y[
+        #     (y['Sample'].isin(['C9'])) & 
+        #     (y['cluster'].isin([0, 4, 8, 13, 23, 28]))
+        # ]
+        # res3 = pd.concat([res1, res2], axis=0).sample(frac=1.0)
+        # res3['size'] = 1
+        # res4 = y[
+        #     (y['Sample'].isin(['C9'])) & 
+        #     ~(y['cluster'].isin([0, 4, 8, 13, 23, 28]))
+        # ]
+        # res4['size'] = 2
+        # y = pd.concat([res3, res4], axis=0)
+        # y['size'] = [i * (144000 / len(X_encoded_embedded)) for i in y['size']]
+        # X_encoded_embedded = X_encoded_embedded[y.index]
+
+        # # plot latent vectors colored according to sample
+        # label_color_dict = PlotLatentSpace(
+        #     reconstructions=False,
+        #     zoom=None,
+        #     X_encoded_embedded=X_encoded_embedded,
+        #     X_decoded=None,
+        #     y=y,
+        #     channel_color_dict=None,
+        #     scatter_point_size=144000 / len(X_encoded_embedded),
+        #     filename='embedding_by_sample',
+        #     save_dir=save_dir
+        # )
+
+        # plot latent vectors colored according to prior clustering
+        label_color_dict = PlotLatentSpace(
+            reconstructions=False,
+            zoom=None,
+            X_encoded_embedded=X_encoded_embedded,
+            X_decoded=None,
+            y=y,
+            channel_color_dict=None,
+            scatter_point_size=350000 / len(X_encoded_embedded),
+            filename='segmentation-based_leiden_clustering',
+            save_dir=save_dir
         )
         
-        X_combo_seg[:] = X_train_seg
-        X_combo_seg.append(X_validate_seg, axis=1)
-        X_combo_seg.append(X_test_seg, axis=1)
-    
-    ###########################################################################
-
-    if config.cluster_full_dataset:
+        # # REMOVE UNCLUSTERED CELLS (cluster -1)
+        # # plot latent vectors colored by HDBSCAN clustering of latent space
+        # # filter_indices = np.where(clustering.labels_ != -1)[0].tolist()
+        # # X_encoded_embedded_filt = np.take(X_encoded_embedded, filter_indices, 0)
+        # # clustering_labels = clustering.labels_[filter_indices]
         
-        print('Working with combined training, validation, and test data.')
-        print()
+        # PlotLatentSpace(
+        #     reconstructions=False,
+        #     zoom=None,
+        #     X_encoded_embedded=X_encoded_embedded,
+        #     X_decoded=None,
+        #     y=clustering.labels_,
+        #     channel_color_dict=None,
+        #     scatter_point_size=144000 / len(X_encoded_embedded),
+        #     filename='embedding-based_hdbscan_clustering',
+        #     save_dir=save_dir
+        # )
 
-        # read combined thumbnails
-        X = zarr.open(combo_dir)
-        X = transposeZarr(z=X)
+        # # reconstruct thumbnail images from latent vectors
+        # X_decoded = DecodeVectors(
+        #     decoder=decoder, percentile_cutoffs=percentile_cutoffs, contrast_limits=contrast_limits,
+        #     X_encoded=X_encoded, X_seg=X_seg,
+        #     orig_input_dims=training_thumb_dims,
+        #     channel_color_dict=config.channel_colors,
+        #     intensity_multiplier=1.3
+        # )
+
+        # # initialize a numpy array to store reconstructed thumbnails
+        # X_transform_rgb = np.empty(shape=(0, training_thumb_dims[0], training_thumb_dims[1], 3))
+        # intensity_multiplier = 1.0
         
-        # read combined thumbnails
-        X_seg = zarr.open(combo_dir_seg)
-        X_seg = transposeZarr(z=X_seg)
+        # for e, transform in enumerate(X_transform):
 
-        # read training labels
-        y_train = pd.read_csv(
-            os.path.join(config.output_path, '1_cellcutter_input/train.csv')
-        )
+        #     if e % 200 == 0:
+        #         print(e)
+            
+        #     reconstructed_img = transform.reshape(
+        #         training_thumb_dims[0], training_thumb_dims[1], training_thumb_dims[2]
+        #     )
 
-        # read validation labels
-        y_validate = pd.read_csv(
-            os.path.join(config.output_path, '1_cellcutter_input/validate.csv')
-        )
+        #     # undo mask
+        #     reconstructed_img /= mask[0, :, :, :]
 
-        # read test labels
-        y_test = pd.read_csv(
-            os.path.join(config.output_path, '1_cellcutter_input/test.csv')
-        )
+        #     # initialize image overlay
+        #     overlay = np.zeros((reconstructed_img.shape[0], reconstructed_img.shape[1]))
 
-        # combine labels for train, validate, and test data
-        y = pd.concat([y_train, y_validate, y_test], axis=0)
-        labels = y['Sample']
+        #     # add centroid point at the center of the image
+        #     # overlay[
+        #     #     int(reconstructed_img.shape[0] / 2):int(reconstructed_img.shape[0] / 2) + 1,
+        #     #     int(reconstructed_img.shape[1] / 2):int(reconstructed_img.shape[1] / 2) + 1
+        #     # ] = 1
 
-    else:  # take a sample of test thumbnail data for analysis
+        #     overlay = gray2rgb(overlay)
 
-        # read test thumbnails (16-bit unsigned integer format)
-        z1_test_path = os.path.join(
-            config.output_path,
-            f'2_cellcutter_output_win{config.window_size}'
-            f'/test_thumbnails_{config.window_size}.zip'
-        )
-        store = zarr.ZipStore(z1_test_path, mode='r')
-        X_test = zarr.open(store=store)
-        X = transposeZarr(z=X_test)
+        #     for name, (ch, color) in config.channel_colors.items():
 
-        # computing for processing efficiency, large clustering_sample_sizes
-        # not able to fit in memory, may need to rechunk 
-        X = X[0:config.clustering_sample_size].compute()  
+        #         channel_slice = reconstructed_img[:, :, ch]
 
-        # read segmentation thumbnails for test data (16-bit unsigned integer)
-        z1_test_path_seg = os.path.join(
-            config.output_path,
-            f'2_cellcutter_output_win{config.window_size}'
-            f'/test_thumbnails_{config.window_size}_seg.zip'
-        )
-        store = zarr.ZipStore(z1_test_path_seg, mode='r')
-        X_test_seg = zarr.open(store=store)
-        X_seg = transposeZarr(z=X_test_seg)
-        X_seg = X_seg[0:config.clustering_sample_size].compute()
+        #         channel_slice = reverse_processing(
+        #                     percentile_cutoffs, channel_slice, name, contrast_limits
+        #                 )
 
-        # read test labels
-        y_test = pd.read_csv(
-            os.path.join(config.output_path, '1_cellcutter_input/test.csv')
-        )
-        y = y_test[0:config.clustering_sample_size].copy()
-        labels = y['Sample']
-    
-    ###########################################################################
+        #         # apply different size mask for viz only
+        #         # channel_slice *= mask[0, :, :, 0]
 
-    mask, vmin, vmax = compute_vignette_mask(
-        window_size=config.window_size, std_dev=config.mask_std_dev
-    )
+        #         channel_slice = gray2rgb(channel_slice)
 
-    # X_transform = X.astype('float')  # use for binary patches
-    
-    dask_labels = da.from_array(labels.values, chunks=(X.chunksize[0],))
-    dask_labels = dask_labels.reshape((-1, 1, 1, 1))
+        #         channel_slice = channel_slice * intensity_multiplier
 
-    print('Aligning histograms.')
-    print()
-    X_transform = da.map_blocks(
-        align_histograms, X, dask_labels, limits, dtype=np.float32,
-    )
-    
-    if config.masked_model:
-        print('Applying Gaussian vignette mask.')
-        print()
-        X_transform *= mask
+        #         overlay += channel_slice.compute() * to_rgb(color)
 
-    ###########################################################################
-    # encode images
-    try:
-        X_encoded = np.load(
-            os.path.join(
-                save_dir, 
-                f'{os.path.basename(config.output_path)}_encodings.npy')
-        )
-        assert X_encoded.shape[0] == X_transform.shape[0]
-    
-    except (FileNotFoundError, AssertionError):
-        print('Encoding images...')
+        #     # overlay += seg_slice.compute()
 
-        X_encoded = encoder.predict(X_transform, batch_size=32)
+        #     overlay = overlay.reshape((1, training_thumb_dims[0], training_thumb_dims[1], 3))
 
-        np.save(
-            os.path.join(
-                save_dir, f'{os.path.basename(config.output_path)}_encodings'),
-            X_encoded
-        )
+        #     X_transform_rgb = np.concatenate((X_transform_rgb, overlay), axis=0)
 
-        temp = pd.DataFrame(X_encoded)
-        temp.columns = [f'vae_{i}' for i in temp.columns]
-        x_encoded_df = pd.concat(
-            [y['CellID'].reset_index(drop=True), pd.DataFrame(temp)], axis=1)
-        x_encoded_df.to_csv(
-            os.path.join(
-                save_dir, 
-                f'{os.path.basename(config.output_path)}_encodings.csv'), 
-            index=False
-        )
+        # # plot latent vectors represented as their learned representations
+        # PlotLatentSpace(
+        #     reconstructions=True,
+        #     zoom=0.5,
+        #     X_encoded_embedded=X_encoded_embedded,
+        #     X_decoded=X_transform_rgb,  # X_decoded,
+        #     y=y['cluster_3d'],
+        #     channel_color_dict=config.channel_colors,
+        #     scatter_point_size=144000 / len(X_encoded_embedded),
+        #     filename='image_patches',
+        #     save_dir=save_dir
+        # )
 
-    # X_decoded = DecodeVectors(
-    #     decoder=decoder, percentile_cutoffs=percentile_cutoffs, 
-    #     contrast_limits=contrast_limits,
-    #     X_encoded=X_encoded, X_seg=X_seg,
-    #     orig_input_dims=training_thumb_dims,
-    #     channel_color_dict=config.channel_colors,
-    #     intensity_multiplier=1.3
-    # )
+        # # display learned representations of input thumbnail images
+        # if config.latent_dimension == 2:
 
-    ###########################################################################
-    # embed latent vectors if they are greater than 2D
+        #     InterpolationGrid(
+        #         orig_input_dims=training_thumb_dims,
+        #         grid_size=50,
+        #         X_encoded=X_encoded,
+        #         y=y['cluster_3d'],
+        #         decoder=decoder,
+        #         label_color_dict=label_color_dict,
+        #         channel_color_dict=config.channel_colors,
+        #         frac_of_scatter_points=1.0,
+        #         scatter_point_size=144000 / len(X_encoded_embedded),
+        #         make_sample_sizes_equal=False,
+        #         img_brightness_multiplier=1.2,
+        #         scatter_point_alpha=1.0,
+        #         save_dir=save_dir
+        #     )
 
-    embedding_path = os.path.join(save_dir, 'embedding.npy')
+        # # get input and output images of lassoed latent vectors for targeted analysis of vectors 
+        # if config.lasso_vector_tool:
+        #     LassoVectors(
+        #         decoder=decoder,
+        #         clustering_labels=clustering.labels_,
+        #         percentile_cutoffs=percentile_cutoffs,
+        #         contrast_limits=contrast_limits,
+        #         orig_input_dims=training_thumb_dims,
+        #         imgs_instead_of_points=True,
+        #         zoom=0.5,
+        #         X=X_transform,
+        #         X_seg=X_seg,
+        #         X_encoded=X_encoded,
+        #         X_encoded_embedded=X_encoded_embedded,
+        #         X_decoded=X_decoded,
+        #         y=y['cluster_3d'],
+        #         numColumns=10,
+        #         intensity_multiplier=1.1,
+        #         label_color_dict=label_color_dict,
+        #         channel_color_dict=config.channel_colors,
+        #         max_examples=1000,
+        #         thumbnail_font_size=3.0,
+        #         save_dir=save_dir,
+        #         mask=mask,
+        #         undo_mask=False
+        #     )
 
-    if (config.latent_dimension > 2) and not os.path.exists(embedding_path):
+        # PlotReconstructedImages(
+        #     orig_input_dims=training_thumb_dims,
+        #     percentile_cutoffs=percentile_cutoffs,
+        #     contrast_limits=contrast_limits,
+        #     decoder=decoder,
+        #     X=X_transform[0:100],
+        #     X_seg=X_seg[0:100],
+        #     X_encoded=X_encoded[0:100],
+        #     y=y['cluster_3d'][0:100],
+        #     numColumns=10,
+        #     label_color_dict=label_color_dict,
+        #     channel_color_dict=config.channel_colors,
+        #     intensity_multiplier=1.1,
+        #     thumbnail_font_size=3.0,
+        #     filename='learned_representations',
+        #     save_dir=save_dir,
+        #     mask=mask,
+        #     undo_mask=True
+        # )
+           
+        # # compute mean squared error between thumbnail image inputs and outputs
+        # (average_error,
+        #     errors,
+        #     X_outliers,
+        #     X_outliers_seg,
+        #     X_encoded_outliers,
+        #     y_outliers,
+        #     outlier_idxs) = mse(
+        #         orig_input_dims=training_thumb_dims,
+        #         decoder=decoder,
+        #         X=X_transform,
+        #         X_seg=X_seg,
+        #         X_encoded=X_encoded,
+        #         y=y['cluster_3d'],
+        #         mse_percentile_cutoff=99,
+        #         filename='mse_dist',
+        #         save_dir=save_dir
+        # )
 
-        startTime = datetime.now()
-
-        print('Embedding data...')
-
-        if config.embedding_algorithm == 'TSNE':
-            print('Computing TSNE embedding.')
-            X_encoded_embedded = TSNE(
-                n_components=2,
-                perplexity=27,
-                early_exaggeration=19,
-                learning_rate=200.0,
-                metric='euclidean',
-                random_state=5,
-                init='pca', n_jobs=-1).fit_transform(X_encoded)
-
-        elif config.embedding_algorithm == 'UMAP':
-            print('Computing UMAP embedding.')
-            X_encoded_embedded = UMAP(
-                n_components=2,
-                n_neighbors=25,
-                learning_rate=1.0,
-                output_metric='euclidean',
-                min_dist=0.1,
-                repulsion_strength=1,
-                random_state=1,
-                n_epochs=1000,
-                init='spectral',
-                metric='euclidean',
-                metric_kwds=None,
-                output_metric_kwds=None,
-                n_jobs=-1,
-                low_memory=False,
-                spread=1.0,
-                local_connectivity=1.0,
-                set_op_mix_ratio=0.5,
-                negative_sample_rate=5,
-                transform_queue_size=4.0,
-                a=None,
-                b=None,
-                angular_rp_forest=False,
-                target_n_neighbors=-1,
-                target_metric='categorical',
-                target_metric_kwds=None,
-                target_weight=0.5,
-                transform_seed=42,
-                transform_mode='embedding',
-                force_approximation_algorithm=False,
-                verbose=False,
-                unique=False,
-                densmap=False,
-                dens_lambda=2.0,
-                dens_frac=0.6,
-                dens_var_shift=0.1,
-                disconnection_distance=None,
-                output_dens=False).fit_transform(X_encoded)
-
-            print('Embedding completed in ' + str(datetime.now() - startTime))
-
-        # save embedding
-        np.save(os.path.join(save_dir, 'embedding'), X_encoded_embedded)
-
-    elif (config.latent_dimension > 2) and os.path.exists(embedding_path):
-        print('Loading saved embedding.')
-
-        # load previously saved embedding
-        X_encoded_embedded = np.load(embedding_path)
-
-    else:
-        # simply assign the 2D X_encoded the variable X_encoded_embedded
-        X_encoded_embedded = X_encoded.copy()
-
-    ###########################################################################
- 
-    # cluster the data with HDBSCAN
-    print(f'Minimum_cluster_size is {config.hdbscan_min_cluster_size}')
-
-    clustering = hdbscan.HDBSCAN(
-        min_cluster_size=config.hdbscan_min_cluster_size, min_samples=None,
-        metric='euclidean', alpha=1.0, p=None, algorithm='best',
-        leaf_size=40,
-        memory=Memory(location=None),
-        approx_min_span_tree=True,
-        gen_min_span_tree=False, core_dist_n_jobs=4,
-        cluster_selection_method='eom',
-        allow_single_cluster=False,
-        prediction_data=False,
-        match_reference_implementation=False).fit(X_encoded_embedded)
-
-    print(np.unique(clustering.labels_))
-    
-    ###########################################################################
-    # patches = pd.read_csv(
-    #     '/n/scratch/users/g/gjb15/VAE9_VIG7_multi-tissue/test/combined/'
-    #     '6_latent_space_LD412/leiden_out_nn20_r2.5/'
-    #     'combined_encodings-patches.csv'
-    # )
-    
-    # plot latent vectors colored by high-dimensional Leiden clustering
-    # (np.array call is for function to recognize input as VAE clustering)
-    
-    # label_color_dict = PlotLatentSpace(
-    #     reconstructions=False,
-    #     zoom=None,
-    #     X_encoded_embedded=X_encoded_embedded,
-    #     X_decoded=None,
-    #     y=np.array(patches['Cluster'][patches['CellID'].isin(y['CellID'])]),  
-    #     channel_color_dict=None,
-    #     scatter_point_size=270000 / len(X_encoded_embedded),
-    #     filename='vector-based_leiden_clustering',
-    #     save_dir=save_dir
-    # )
-
-    # shuffle data to scramble sample labels
-    # res1 = y[y['Sample'].isin(['CRC097', 'CRC102'])]
-    # res2 = y[
-    #     (y['Sample'].isin(['C9'])) & 
-    #     (y['cluster'].isin([0, 4, 8, 13, 23, 28]))
-    # ]
-    # res3 = pd.concat([res1, res2], axis=0).sample(frac=1.0)
-    # res3['size'] = 1
-    # res4 = y[
-    #     (y['Sample'].isin(['C9'])) & 
-    #     ~(y['cluster'].isin([0, 4, 8, 13, 23, 28]))
-    # ]
-    # res4['size'] = 2
-    # y = pd.concat([res3, res4], axis=0)
-    # y['size'] = [i * (144000 / len(X_encoded_embedded)) for i in y['size']]
-    # X_encoded_embedded = X_encoded_embedded[y.index]
-
-    # # plot latent vectors colored according to sample
-    # label_color_dict = PlotLatentSpace(
-    #     reconstructions=False,
-    #     zoom=None,
-    #     X_encoded_embedded=X_encoded_embedded,
-    #     X_decoded=None,
-    #     y=y,
-    #     channel_color_dict=None,
-    #     scatter_point_size=144000 / len(X_encoded_embedded),
-    #     filename='embedding_by_sample',
-    #     save_dir=save_dir
-    # )
-
-    # plot latent vectors colored according to prior clustering
-    label_color_dict = PlotLatentSpace(
-        reconstructions=False,
-        zoom=None,
-        X_encoded_embedded=X_encoded_embedded,
-        X_decoded=None,
-        y=y,
-        channel_color_dict=None,
-        scatter_point_size=350000 / len(X_encoded_embedded),
-        filename='segmentation-based_leiden_clustering',
-        save_dir=save_dir
-    )
-    
-    # # REMOVE UNCLUSTERED CELLS (cluster -1)
-    # # plot latent vectors colored by HDBSCAN clustering of latent space
-    # # filter_indices = np.where(clustering.labels_ != -1)[0].tolist()
-    # # X_encoded_embedded_filt = np.take(X_encoded_embedded, filter_indices, 0)
-    # # clustering_labels = clustering.labels_[filter_indices]
-    
-    # PlotLatentSpace(
-    #     reconstructions=False,
-    #     zoom=None,
-    #     X_encoded_embedded=X_encoded_embedded,
-    #     X_decoded=None,
-    #     y=clustering.labels_,
-    #     channel_color_dict=None,
-    #     scatter_point_size=144000 / len(X_encoded_embedded),
-    #     filename='embedding-based_hdbscan_clustering',
-    #     save_dir=save_dir
-    # )
-
-    # # reconstruct thumbnail images from latent vectors
-    # X_decoded = DecodeVectors(
-    #     decoder=decoder, percentile_cutoffs=percentile_cutoffs, contrast_limits=contrast_limits,
-    #     X_encoded=X_encoded, X_seg=X_seg,
-    #     orig_input_dims=training_thumb_dims,
-    #     channel_color_dict=config.channel_colors,
-    #     intensity_multiplier=1.3
-    # )
-
-    # # initialize a numpy array to store reconstructed thumbnails
-    # X_transform_rgb = np.empty(shape=(0, training_thumb_dims[0], training_thumb_dims[1], 3))
-    # intensity_multiplier = 1.0
-    
-    # for e, transform in enumerate(X_transform):
-
-    #     if e % 200 == 0:
-    #         print(e)
-        
-    #     reconstructed_img = transform.reshape(
-    #         training_thumb_dims[0], training_thumb_dims[1], training_thumb_dims[2]
-    #     )
-
-    #     # undo mask
-    #     reconstructed_img /= mask[0, :, :, :]
-
-    #     # initialize image overlay
-    #     overlay = np.zeros((reconstructed_img.shape[0], reconstructed_img.shape[1]))
-
-    #     # add centroid point at the center of the image
-    #     # overlay[
-    #     #     int(reconstructed_img.shape[0] / 2):int(reconstructed_img.shape[0] / 2) + 1,
-    #     #     int(reconstructed_img.shape[1] / 2):int(reconstructed_img.shape[1] / 2) + 1
-    #     # ] = 1
-
-    #     overlay = gray2rgb(overlay)
-
-    #     for name, (ch, color) in config.channel_colors.items():
-
-    #         channel_slice = reconstructed_img[:, :, ch]
-
-    #         channel_slice = reverse_processing(
-    #                     percentile_cutoffs, channel_slice, name, contrast_limits
-    #                 )
-
-    #         # apply different size mask for viz only
-    #         # channel_slice *= mask[0, :, :, 0]
-
-    #         channel_slice = gray2rgb(channel_slice)
-
-    #         channel_slice = channel_slice * intensity_multiplier
-
-    #         overlay += channel_slice.compute() * to_rgb(color)
-
-    #     # overlay += seg_slice.compute()
-
-    #     overlay = overlay.reshape((1, training_thumb_dims[0], training_thumb_dims[1], 3))
-
-    #     X_transform_rgb = np.concatenate((X_transform_rgb, overlay), axis=0)
-
-    # # plot latent vectors represented as their learned representations
-    # PlotLatentSpace(
-    #     reconstructions=True,
-    #     zoom=0.5,
-    #     X_encoded_embedded=X_encoded_embedded,
-    #     X_decoded=X_transform_rgb,  # X_decoded,
-    #     y=y['cluster_3d'],
-    #     channel_color_dict=config.channel_colors,
-    #     scatter_point_size=144000 / len(X_encoded_embedded),
-    #     filename='image_patches',
-    #     save_dir=save_dir
-    # )
-
-    # # display learned representations of input thumbnail images
-    # if config.latent_dimension == 2:
-
-    #     InterpolationGrid(
-    #         orig_input_dims=training_thumb_dims,
-    #         grid_size=50,
-    #         X_encoded=X_encoded,
-    #         y=y['cluster_3d'],
-    #         decoder=decoder,
-    #         label_color_dict=label_color_dict,
-    #         channel_color_dict=config.channel_colors,
-    #         frac_of_scatter_points=1.0,
-    #         scatter_point_size=144000 / len(X_encoded_embedded),
-    #         make_sample_sizes_equal=False,
-    #         img_brightness_multiplier=1.2,
-    #         scatter_point_alpha=1.0,
-    #         save_dir=save_dir
-    #     )
-
-    # # get input and output images of lassoed latent vectors for targeted analysis of vectors 
-    # if config.lasso_vector_tool:
-    #     LassoVectors(
-    #         decoder=decoder,
-    #         clustering_labels=clustering.labels_,
-    #         percentile_cutoffs=percentile_cutoffs,
-    #         contrast_limits=contrast_limits,
-    #         orig_input_dims=training_thumb_dims,
-    #         imgs_instead_of_points=True,
-    #         zoom=0.5,
-    #         X=X_transform,
-    #         X_seg=X_seg,
-    #         X_encoded=X_encoded,
-    #         X_encoded_embedded=X_encoded_embedded,
-    #         X_decoded=X_decoded,
-    #         y=y['cluster_3d'],
-    #         numColumns=10,
-    #         intensity_multiplier=1.1,
-    #         label_color_dict=label_color_dict,
-    #         channel_color_dict=config.channel_colors,
-    #         max_examples=1000,
-    #         thumbnail_font_size=3.0,
-    #         save_dir=save_dir,
-    #         mask=mask,
-    #         undo_mask=False
-    #     )
-
-    # PlotReconstructedImages(
-    #     orig_input_dims=training_thumb_dims,
-    #     percentile_cutoffs=percentile_cutoffs,
-    #     contrast_limits=contrast_limits,
-    #     decoder=decoder,
-    #     X=X_transform[0:100],
-    #     X_seg=X_seg[0:100],
-    #     X_encoded=X_encoded[0:100],
-    #     y=y['cluster_3d'][0:100],
-    #     numColumns=10,
-    #     label_color_dict=label_color_dict,
-    #     channel_color_dict=config.channel_colors,
-    #     intensity_multiplier=1.1,
-    #     thumbnail_font_size=3.0,
-    #     filename='learned_representations',
-    #     save_dir=save_dir,
-    #     mask=mask,
-    #     undo_mask=True
-    # )
-       
-    # # compute mean squared error between thumbnail image inputs and outputs
-    # (average_error,
-    #     errors,
-    #     X_outliers,
-    #     X_outliers_seg,
-    #     X_encoded_outliers,
-    #     y_outliers,
-    #     outlier_idxs) = mse(
-    #         orig_input_dims=training_thumb_dims,
-    #         decoder=decoder,
-    #         X=X_transform,
-    #         X_seg=X_seg,
-    #         X_encoded=X_encoded,
-    #         y=y['cluster_3d'],
-    #         mse_percentile_cutoff=99,
-    #         filename='mse_dist',
-    #         save_dir=save_dir
-    # )
-
-    # # get input thumbnails associated with poor learned reconstruction
-    # PlotReconstructedImages(
-    #     orig_input_dims=training_thumb_dims,
-    #     percentile_cutoffs=percentile_cutoffs,
-    #     contrast_limits=contrast_limits,
-    #     decoder=decoder,
-    #     X=X_outliers,
-    #     X_seg=X_outliers_seg,
-    #     X_encoded=X_encoded_outliers,
-    #     y=y_outliers,
-    #     numColumns=10,
-    #     label_color_dict=label_color_dict,
-    #     channel_color_dict=config.channel_colors,
-    #     intensity_multiplier=1.0,
-    #     thumbnail_font_size=3.0,
-    #     filename='outliers',
-    #     save_dir=save_dir,
-    #     mask=mask,
-    #     undo_mask=False
-    # )
+        # # get input thumbnails associated with poor learned reconstruction
+        # PlotReconstructedImages(
+        #     orig_input_dims=training_thumb_dims,
+        #     percentile_cutoffs=percentile_cutoffs,
+        #     contrast_limits=contrast_limits,
+        #     decoder=decoder,
+        #     X=X_outliers,
+        #     X_seg=X_outliers_seg,
+        #     X_encoded=X_encoded_outliers,
+        #     y=y_outliers,
+        #     numColumns=10,
+        #     label_color_dict=label_color_dict,
+        #     channel_color_dict=config.channel_colors,
+        #     intensity_multiplier=1.0,
+        #     thumbnail_font_size=3.0,
+        #     filename='outliers',
+        #     save_dir=save_dir,
+        #     mask=mask,
+        #     undo_mask=False
+        # )
