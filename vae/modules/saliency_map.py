@@ -47,7 +47,7 @@ def input_output(config):
 
     # create save dir
     save_dir = os.path.join(
-        config.output_path, f'7_saliency_map_LD{config.latent_dimension}'
+        config.output_path, f'8_saliency_map_LD{config.latent_dimension}'
     )
     if not os.path.exists(save_dir):
         os.mkdir(save_dir)
@@ -55,17 +55,25 @@ def input_output(config):
     # read combined training, validation, and test image patches
     combo_dir = os.path.join(
         config.output_path, 
-        f'6_latent_space_LD{config.latent_dimension}/combined_zarr'
+        f'7_latent_space_LD{config.latent_dimension}/combined_zarr'
     )
     X = zarr.open(combo_dir)
     X = transposeZarr(z=X)
     
     # load percentile cutoffs
-    cutoffs_dir = os.path.join(
-        config.output_path, '4_feature_preprocessing_selections'
+    # cutoffs_dir = os.path.join(
+    #     config.output_path, '5_feature_preprocessing_selections'
+    #     )
+    # with open(os.path.join(cutoffs_dir, 'cutoffs.pkl'), 'rb') as handle:
+    #     percentile_cutoffs = pickle.load(handle)
+    
+    background_dir = os.path.join(
+        config.output_path, '5_background_limits'
         )
-    with open(os.path.join(cutoffs_dir, 'cutoffs.pkl'), 'rb') as handle:
-        percentile_cutoffs = pickle.load(handle)
+    bkgd_limits = yaml.safe_load(
+                open(os.path.join(background_dir, 'bkgd_limits.yml'))
+            )
+    bkgd_limits = {eval(k): v for k, v in bkgd_limits.items()}
 
     # image contrast limits
     contrast_limits = yaml.safe_load(open(config.contrast_path))
@@ -73,7 +81,7 @@ def input_output(config):
     # load previously saved encoder and decoder
     try:
         encoder = load_model(
-            os.path.join(config.output_path, '5_train_vae/encoder.hdf5')
+            os.path.join(config.output_path, '6_train_vae/encoder.hdf5')
         )
     except OSError:
         print('Encoder not found.')
@@ -81,29 +89,39 @@ def input_output(config):
 
     try:
         decoder = load_model(
-            os.path.join(config.output_path, '5_train_vae/decoder.hdf5')
+            os.path.join(config.output_path, '6_train_vae/decoder.hdf5')
         )
     except OSError:
         print('Decoder not found.')
         sys.exit()
     
     # read leiden clusters
-    if config.output_path.name == 'VAE9_VIG7':
-        clusters = pd.read_csv(
-            os.path.join(config.output_path, 
-                         f'6_latent_space_LD{config.latent_dimension}/'
-                         f'{config.output_path.name}_'
-                         'encodings-patches_res1.5.csv')
-        )
-    elif config.output_path.name == 'VAE30':
-        clusters = pd.read_csv(
-            os.path.join(config.output_path, 
-                         f'6_latent_space_LD{config.latent_dimension}/'
-                         f'{config.output_path.name}_'
-                         'encodings-patches_res0.75.csv')
-        )
-    else:
-        print('Not VAE9 or VAE30; aborting')
+    try:
+
+        if config.output_path.name == 'VAE9_VIG7':
+            clusters = pd.read_csv(
+                os.path.join(config.output_path, 
+                             f'6_latent_space_LD{config.latent_dimension}/'
+                             f'{config.output_path.name}_'
+                             'encodings-patches_res1.5.csv')
+            )
+        elif config.output_path.name == 'VAE30':
+            clusters = pd.read_csv(
+                os.path.join(config.output_path, 
+                             f'6_latent_space_LD{config.latent_dimension}/'
+                             f'{config.output_path.name}_'
+                             'encodings-patches_res0.75.csv')
+            )
+        elif config.output_path.name == 'VAE9_VIG7':
+            clusters = pd.read_csv(
+                os.path.join(config.output_path, 
+                             f'7_latent_space_LD{config.latent_dimension}/'
+                             f'{config.output_path.name}_'
+                             'encodings_FULL-patches.csv')
+            )
+    except FileNotFoundError:
+        print()
+        print('Leiden encodings not found, aborting. Compute them with scanpy and re-try.')
         sys.exit(1)
 
     # read encodings

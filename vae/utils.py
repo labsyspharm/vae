@@ -67,45 +67,52 @@ def apply_scaling(flat_patch, scaling_funcs, sample, sample_keys):
     return flat_patch
 
 
-def align_histograms(X_block, labels_block, limits):
-    """Apply linear polynomial image channel transformations computed 
-   in align_histograms.py to a batch of image patches block-wise and clip
-   channels to ensure 0-1 normalization."""
+def remove_background(X_block, samples_block, bkgd_limits):
+    """Set channel background pixels to zero in a batch of image patches.
+    This function clips the pixel values of each channel to ensure normalization within the range of 0 to 1. 
+    It utilizes background limits to adjust the pixel intensities based on the specified transformations 
+    and handles different data types (uint8 and uint16) accordingly.
 
-    # flat_patches = X_block.reshape(X_block.shape[0], -1, X_block.shape[-1])
-    # for i, sample in enumerate(labels_block):
-    #     func_keys = [k for k in scaling_funcs.keys() 
-    #                  if k[0] == sample.item()]
-    #     # assuming scaling_funcs keys are in same order as patch channels 
-    #     for j, key in enumerate(func_keys):
-    #         scaling_function = scaling_funcs[key][('gmm_peak1', 'mp99.95')]
-    #         flat_patches[i, :, j] = scaling_function(flat_patches[i, :, j])
-    # X_block_transformed = flat_patches.reshape(X_block.shape)
-    # return np.clip(X_block_transformed, 0, 1)
+    Args:
+        X_block (ndarray): A batch of image patches with shape (num_samples, height, width, num_channels).
+        labels_block (ndarray): An array of sample labels corresponding to each image patch.
+        bkgd_limits (dict): A dictionary containing background limits for each sample.
+
+    Returns:
+        ndarray: The transformed and normalized image patches.
+    """
+
+    # extract patch metadata
+    if str(X_block.dtype) == 'uint8':
+        divisor = 255
+    elif str(X_block.dtype) == 'uint16':
+        divisor = 65535
+    else:
+        raise ValueError(f'Unsupported data type: {X_block.dtype}')
+    num_samples, _, _, num_channels = X_block.shape    
     
+    # convert patch data to float32
     X_block = X_block.astype('float32')
-    sample_keys = {sample: [] for sample in np.unique(labels_block.ravel())}
-    for key in limits.keys():
-        if key[0] in sample_keys.keys():
-            sample_keys[key[0]].append(key)
-    num_samples, _, _, num_channels = X_block.shape
-    mins = np.empty((num_samples, num_channels), dtype='float32')
-    maxs = np.empty((num_samples, num_channels), dtype='float32')
-    for i, sample in enumerate(labels_block.ravel()):
-        for j, key in enumerate(sample_keys[sample]):
-            min_val = limits[key]
-            mins[i, j] = min_val
-            maxs[i, j] = 65535
-    mins = mins.reshape(num_samples, 1, 1, num_channels)
-    maxs = maxs.reshape(num_samples, 1, 1, num_channels)
+    
+    # compute channel mins and maxs
+    channel_mins = np.array([
+        bkgd_limits[key] for key in bkgd_limits.keys() for
+        i in samples_block.ravel() if i == key[0]
+    ]).reshape(num_samples, num_channels)
+    channel_maxs = np.full((num_samples, num_channels), divisor, dtype='float32')
+
+    # log transform patches and channel mins/maxs
     X_block = log_transform(X_block)
-    log_mins = np.log10(mins + 1)
-    log_maxs = np.log10(maxs + 1)
-    range_vals = log_maxs - log_mins
-    mask = X_block > log_mins
-    scaled_values = (X_block - log_mins) / range_vals
-    X_block = np.where(mask, scaled_values, 0)
+    log_channel_mins = np.log10(channel_mins + 1).reshape(num_samples, 1, 1, num_channels)
+    log_channel_maxs = np.log10(channel_maxs + 1).reshape(num_samples, 1, 1, num_channels)
+    range_vals = log_channel_maxs - log_channel_mins
+    
+    # mask background pixels and normalize channel intensities
+    foreground_mask = X_block > log_channel_mins
+    normalized_values = (X_block - log_channel_mins) / range_vals
+    X_block = np.where(foreground_mask, normalized_values, 0)
     X_block = np.clip(X_block, 0, 1)
+
     return X_block
 
 
@@ -123,7 +130,7 @@ def compute_vignette_mask(window_size, std_dev):
     if num_pixels % 2 == 1:
         pass  # number is already odd
     else:
-        num_pixels + 1
+        num_pixels += 1
 
     # create Gaussian kernel
     if num_pixels > window_size:
@@ -154,9 +161,14 @@ def compute_vignette_mask(window_size, std_dev):
         
         # define the range of indices for cropping
         start_x = max(0, center[1] - half_size)
-        end_x = min(mask.shape[1], center[1] + half_size)
+        end_x = start_x + window_size  # Ensure the width is window_size
         start_y = max(0, center[2] - half_size)
-        end_y = min(mask.shape[2], center[2] + half_size)
+        end_y = start_y + window_size  # Ensure the height is window_size
+
+        # start_x = max(0, center[1] - half_size)
+        # end_x = min(mask.shape[1], center[1] + half_size)
+        # start_y = max(0, center[2] - half_size)
+        # end_y = min(mask.shape[2], center[2] + half_size)
         
         # crop the larger array into the smaller mask
         cropped_mask = mask[:, start_x:end_x, start_y:end_y, :]
@@ -172,31 +184,80 @@ def compute_vignette_mask(window_size, std_dev):
     return mask, vmin, vmax
 
 
-def reverse_processing(percentile_cutoffs, channel_slice, channel_name, contrast_limits):
-    """Reverses percentile normalization and log10-transformation,
-       pixel outliers remained clipped)."""
+def reverse_processing(X_decoded_block, X_block, samples_block, bkgd_limits, contrast_limits, mask):
+    """Reverse image patch processing operations on reconstructed (decoded) image patches"""
 
-    lower_cutoff_log, upper_cutoff_log = percentile_cutoffs[channel_name]
+    # extract patch metadata
+    if str(X_block.dtype) == 'uint8':
+        divisor = 255
+    elif str(X_block.dtype) == 'uint16':
+        divisor = 65535
+    else:
+        raise ValueError(f'Unsupported data type: {X_block.dtype}')
+    num_samples, _, _, num_channels = X_block.shape
 
-    # reverse percentile normalization
-    channel_slice = (
-        (((upper_cutoff_log - lower_cutoff_log) * (channel_slice - 0)) /
-         (1 - 0)) + lower_cutoff_log
+    # get log-transformed channel mins
+    channel_mins = np.array([
+        bkgd_limits[key] for key in bkgd_limits.keys() for
+        i in samples_block.ravel() if i == key[0]
+    ]).reshape(num_samples, num_channels)
+
+    log_channel_mins = np.log10(channel_mins + 1).reshape(num_samples, 1, 1, num_channels)
+
+    # get log-transformed channel maxs
+    channel_maxs = np.full((num_samples, num_channels), divisor, dtype='float32')
+    log_channel_maxs = np.log10(channel_maxs + 1).reshape(num_samples, 1, 1, num_channels)
+    
+    range_vals = log_channel_maxs - log_channel_mins
+
+    # mask background pixels of original channel slice image
+    log_original = log_transform(X_block) 
+    foreground_mask = log_original > log_channel_mins
+
+    if mask is not None:
+        reversed_block = X_decoded_block / mask
+    else:
+        reversed_block = X_decoded_block
+
+    # reverse log transformation and scaling
+    reversed_block = np.where(foreground_mask, reversed_block * range_vals + log_channel_mins, 0)
+    reversed_block = np.rint(10 ** reversed_block) - 1
+
+    # apply image contrast settings to reverse-transformed channel slice
+    lower = np.array(
+        [i[0] for i in contrast_limits.values()] * samples_block.shape[0]
+    ).reshape(num_samples, 1, 1, num_channels)
+    upper = np.array(
+        [i[1] for i in contrast_limits.values()] * samples_block.shape[0]
+    ).reshape(num_samples, 1, 1, num_channels)
+
+    reversed_block = (reversed_block - lower) / (upper - lower)
+
+    # clip values to 0-1 range
+    reversed_block = np.clip(reversed_block, 0, 1)
+
+    return reversed_block
+
+
+def num_legend_columns(bbox, ax, legend_elements, size=10):
+    """calculate the number of columns to use in the legend given
+       the number of legend entries and the height of the 
+       target bbox y-axis"""
+    
+    num_legend_entries = len(legend_elements)
+    x_axis_width, y_axis_height = bbox.width, bbox.height
+
+    # determine the maximum number of entries per column based on y-axis height
+    denominator = 0.4 # adjust denominator based on your legend entry height
+    max_entries_per_column = int(y_axis_height / denominator)  
+
+    # create multiple columns for the legend if necessary
+    if num_legend_entries > max_entries_per_column:
+        num_columns = (num_legend_entries // max_entries_per_column) + 1
+    else:
+        num_columns = 1
+    
+    ax.legend(
+        handles=legend_elements, prop={'size': size}, labelspacing=0.5, 
+        bbox_to_anchor=(1.01, 1.0), ncol=num_columns, columnspacing=0.3
     )
-
-    # reverse log10-transform
-    channel_slice = np.rint(10 ** channel_slice)
-
-    # Normalize pixel values between lower and upper percentile bounds
-    # lower = np.rint(10**lower_cutoff_log)
-    # upper = np.rint(10**upper_cutoff_log)
-    # channel_slice = (channel_slice-lower) / (upper-lower)
-
-    # Apply image contrast settings
-    lower = contrast_limits[channel_name][0]
-    upper = contrast_limits[channel_name][1]
-    channel_slice = (channel_slice - lower) / (upper - lower)
-
-    channel_slice = np.clip(channel_slice, 0, 1)
-
-    return channel_slice

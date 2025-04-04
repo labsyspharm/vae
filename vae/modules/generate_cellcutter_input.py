@@ -13,12 +13,17 @@ logger = logging.getLogger(__name__)
 
 
 def GENERATE_CELLCUTTER_INPUT(config):
-
-    save_dir = os.path.join(config.output_path, '1_cellcutter_input')
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
-
+    
+    if not os.path.isfile(
+      os.path.join(config.output_path,
+                   'checkpoints/GENERATE_CELLCUTTER_INPUT.txt')):
+        
+        save_dir = os.path.join(config.output_path, '1_cellcutter_input')
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+            
         extension = os.path.splitext(config.csv_path)[1]
+
         if extension == '.parquet':
             csv = pd.read_parquet(config.csv_path)
         elif extension == '.csv':
@@ -26,30 +31,35 @@ def GENERATE_CELLCUTTER_INPUT(config):
         else:
             raise ValueError(f'Note: extension type {extension} not supported.')
 
-        # drop noisy cells from HDBSCAN clustering
-        # csv = csv[csv['cluster_3d'] != -1]
-
         #######################################################################
-
+        # # drop noisy cells from HDBSCAN clustering
+        # csv = csv[csv['cluster_3d'] != -1]
+        
         # # calculate weighted random sample by cluster size (class balance)
         # groups = csv.groupby('cluster_3d')
-        # sample_weights = pd.DataFrame({'weights': 1 / (groups.size() * len(groups))})
+        # sample_weights = pd.DataFrame(
+        #     {'weights': 1 / (groups.size() * len(groups))}
+        # )
         # weights = pd.merge(
-        #     csv[['cluster_3d']], sample_weights, left_on='cluster_3d', right_index=True
+        #     csv[['cluster_3d']], sample_weights,
+        #     left_on='cluster_3d', right_index=True
         # )
 
         # csv = csv.sample(
-        #     frac=config.percent_cells, replace=False, weights=weights['weights'],
-        #     random_state=0, axis=0
+        #     frac=config.percent_cells, replace=False,
+        #     weights=weights['weights'], random_state=0, axis=0
         # )
 
         # # remove cells affected by artifacts missed during initial QC
         # # these artifacts were identified by VAE clustering 
         # # (cluster 27, 29, and 30 in 20x20um analysis)
         
-        # # residual_artifact_cellids = main['CellID'][main['VAE20_ROT_res2.0'].isin([27, 29, 30])]
+        # # residual_artifact_cellids = main['CellID'][
+        # #     main['VAE20_ROT_res2.0'].isin([27, 29, 30])
+        # # ]
         # residual_artifact_cellids = pd.read_csv(
-        #     '/Users/greg/projects/vae-paper/src/input/residual_artifact_cellids.csv'
+        #     '/Users/greg/projects/vae-paper/src/input/'
+        #     'residual_artifact_cellids.csv'
         # )
         # csv = csv[~csv['CellID'].isin(residual_artifact_cellids['CellID'])]
 
@@ -58,20 +68,29 @@ def GENERATE_CELLCUTTER_INPUT(config):
         # print(csv.groupby('cluster_3d').size().sort_values(ascending=False))
 
         #######################################################################
-
+        print()
+        logger.info(
+            'Partitioning CyLinter dataframe into training, ' 
+            'validation, and test sets...'
+            )
+        print()
+        
         # shuffle csv data
-        csv = csv.sample(frac=0.2, random_state=0)
+        csv = csv.sample(frac=config.percent_cells, random_state=0)
 
         # reserve 10% of data for testing after model training 
         split = round(len(csv) * 0.10)
-        test = csv[0:split]
+        test = csv[0:split].copy()
+        test.sort_values(by=['Sample', 'CellID'], inplace=True)
         
         # reserve 10% of data for validation at the end of each training epoch
-        validate = csv[split:split * 2]
+        validate = csv[split:split * 2].copy()
+        validate.sort_values(by=['Sample', 'CellID'], inplace=True)
         
         # use remaining data for model training
-        train = csv[split * 2:]
-
+        train = csv[split * 2:].copy()
+        train.sort_values(by=['Sample', 'CellID'], inplace=True)
+    
         # reset row indexes of each dataframe
         test.reset_index(drop=True, inplace=True)
         validate.reset_index(drop=True, inplace=True)
@@ -80,11 +99,6 @@ def GENERATE_CELLCUTTER_INPUT(config):
         #######################################################################
 
         # save testing, validation, and training dataframes for cellcutter
-        test.to_csv(os.path.join(save_dir, 'test.csv'), index=False)
-        validate.to_csv(os.path.join(save_dir, 'validate.csv'), index=False)
-        train.to_csv(os.path.join(save_dir, 'train.csv'), index=False)
-
-        return save_dir
-
-    else:
-        return save_dir
+        test.to_csv(os.path.join(save_dir, 'test_raw.csv'), index=False)
+        validate.to_csv(os.path.join(save_dir, 'validate_raw.csv'), index=False)
+        train.to_csv(os.path.join(save_dir, 'train_raw.csv'), index=False)

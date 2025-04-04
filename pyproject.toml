@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "vae"
-version = "0.0.3"
+version = "0.0.4"
 description = "Generate cropped image patches from a multi-channel TIF image, train a VAE model, and perform clustering on latent space image patch encodings."
 readme = "README.md"
 license = "MIT"
@@ -37,6 +37,7 @@ zarr = "<3.0.0"
 cellcutter = "*"
 opencv-python = "*"
 dask = "*"
+ome-types = "*"
 
 [tool.poetry.scripts]
 vae = "vae.scripts.__main__:main"

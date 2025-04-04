@@ -14,6 +14,7 @@ class Config:
             data = yaml.safe_load(f)
         config.output_path = pathlib.Path(data['output_path']).resolve()
         config.csv_path = pathlib.Path(data['csv_path']).resolve()
+        config.cluster_column = data['cluster_column']
         config.tif_path = pathlib.Path(data['tif_path']).resolve()
         config.outlines_path = pathlib.Path(data['outlines_path']).resolve()
         config.mask_path = pathlib.Path(data['mask_path']).resolve()
@@ -37,6 +38,7 @@ class Config:
         config.embedding_algorithm = str(data['embedding_algorithm'])
         config.channel_colors = dict(data['channel_colors'])
         config.hdbscan_min_cluster_size = int(data['hdbscan_min_cluster_size'])
+        config.scatter_point_size = float(data['scatter_point_size'])
         config.lasso_vector_tool = bool(data['lasso_vector_tool'])
         return config
 

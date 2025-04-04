@@ -1,7 +1,7 @@
 import os
 import re
 import sys
-import pickle
+import yaml
 import logging
 
 import datetime
@@ -24,8 +24,7 @@ from tensorflow.keras.optimizers import RMSprop
 from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard
 
 from ..utils import (
-    log_banner, log_multiline, log_transform, 
-    align_histograms, compute_vignette_mask
+    log_banner, log_multiline, remove_background, compute_vignette_mask
 )
 
 ###############################################################################
@@ -62,14 +61,14 @@ class DataGenerator(Sequence):
     'generates data for Keras model fit'
     
     def __init__(
-            self, name, zarr, y, batch_size, limits, 
+            self, name, zarr, y, batch_size, bkgd_limits, 
             masked_model, mask, shuffle=True):
         'initialization'
         self.name = name
         self.zarr = zarr
         self.y = y
         self.batch_size = batch_size
-        self.limits = limits
+        self.bkgd_limits = bkgd_limits
         self.masked_model = masked_model
         self.mask = mask
         self.shuffle = shuffle
@@ -103,8 +102,8 @@ class DataGenerator(Sequence):
     def __data_generation(self, batch_indices):
         'yields data containing batch_size samples'
         X = self.zarr.oindex[:, batch_indices, :, :].transpose([1, 2, 3, 0])
-        
-        # X = X.astype('float')  # use for binary patches
+
+        # X = X.astype('float')  # Use for binary patches
         
         X = da.from_array(X)
   
@@ -112,17 +111,17 @@ class DataGenerator(Sequence):
         dask_labels = da.from_array(labels.values, chunks=(X.chunksize[0],))
         dask_labels = dask_labels.reshape((-1, 1, 1, 1))
 
-        # preprocess image patches
+        # Preprocess image patches
         X = da.map_blocks(
-            align_histograms, X, 
-            dask_labels, self.limits, dtype=np.float32,
+            remove_background, X, 
+            dask_labels, self.bkgd_limits, dtype=np.float32,
         ).compute()
 
-        # apply mask
+        # Apply mask
         if self.masked_model:
             X *= self.mask
 
-        # rotational data augmention
+        # Rotational data augmention
         if self.name == 'train':
             X = rotate_batch(X)
 
@@ -361,31 +360,32 @@ def build_and_fit_model(img_shape, latent_dimension, learning_rate, training_epo
 def TRAIN_VAE(config):
 
     if not os.path.isfile(
-      os.path.join(config.output_path, 'checkpoints/TRAIN_VAE.txt')):
+      os.path.join(config.output_path,
+                   'checkpoints/TRAIN_VAE.txt')):
 
         # clear backend, set random state seed
         K.clear_session()
         np.random.seed(237)
 
         cellcutter_output_path = os.path.join(
-            config.output_path, f'2_cellcutter_output_win{config.window_size}'
+            config.output_path, f'3_cellcutter_output_win{config.window_size}'
         )
 
-        histogram_alignment_path = os.path.join(
-            config.output_path, '4_histogram_alignment'
+        background_limits_path = os.path.join(
+            config.output_path, '5_background_limits'
         )
 
-        save_dir = os.path.join(config.output_path, '5_train_vae')
+        save_dir = os.path.join(config.output_path, '6_train_vae')
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
         path_numbers = re.findall(r'\d+', cellcutter_output_path)
         window_size = [int(i) for i in path_numbers][-1]
 
-        # read training and validation thumbnails (16-bit unsigned integers)
+        # Read training and validation patches (16-bit unsigned integers)
         z1_train_path = (
             os.path.join(cellcutter_output_path, 
-                         f'train_thumbnails_{window_size}.zip')
+                         f'train_patches_{window_size}_qc.zip')
         )
         store = zarr.ZipStore(z1_train_path, mode='r')
         X_train = zarr.open(store=store)
@@ -394,10 +394,10 @@ def TRAIN_VAE(config):
         #     X_train, chunks=(21, 1, 62, 62), dtype=X_train.dtype
         # )
         
-        # read validation thumbnails (16-bit unsigned integers)
+        # Read validation patches (16-bit unsigned integers)
         z1_validate_path = (
             os.path.join(cellcutter_output_path, 
-                         f'validate_thumbnails_{window_size}.zip')
+                         f'validate_patches_{window_size}_qc.zip')
         )
         store = zarr.ZipStore(z1_validate_path, mode='r')
         X_valid = zarr.open(store=store)
@@ -406,48 +406,49 @@ def TRAIN_VAE(config):
         #     X_valid, chunks=(21, 1, 62, 62), dtype=X_valid.dtype
         # )
 
-        # read training labels
+        # Read training labels
         y_train = pd.read_csv(
-            os.path.join(config.output_path, '1_cellcutter_input/train.csv')
+            os.path.join(config.output_path,
+                         '1_cellcutter_input/train_qc.csv')
         )
-        y_train = y_train['Sample']
+        y_train = y_train['Sample'].astype('str')
         
         # read validation labels
-        y_validate = pd.read_csv(
-            os.path.join(config.output_path, '1_cellcutter_input/validate.csv')
+        y_valid = pd.read_csv(
+            os.path.join(config.output_path,
+                         '1_cellcutter_input/validate_qc.csv')
         )
-        y_validate = y_validate['Sample']
+        y_valid = y_valid['Sample'].astype('str')
 
-        # read histogram scaling functions computed in align_histograms.py
-        with open(
-          os.path.join(
-           histogram_alignment_path, 
-           'limits.pkl'), 'rb') as handle:
-            limits = pickle.load(handle)
+        # Read background limits computed in remove_background.py
+        bkgd_limits = yaml.safe_load(
+            open(os.path.join(background_limits_path, 'bkgd_limits.yml'))
+        )
+        bkgd_limits = {eval(k): v for k, v in bkgd_limits.items()}
 
-        # compute steps per epoch for training data
+        # Compute steps per epoch for training data
         steps_per_epoch = X_train.shape[1] // config.batch_size 
 
-        # compute steps per epoch for validation data 
+        # Compute steps per epoch for validation data 
         validation_steps = X_valid.shape[1] // config.batch_size
 
-        # compute vignette mask
+        # Compute vignette mask
         mask, vmin, vmax = compute_vignette_mask(
             window_size=config.window_size, std_dev=config.mask_std_dev
         )
 
-        # initialize training data generator
+        # Initialize training data generator
         # (does not seem to work with multi-GPU processing)
         training_data_generator = DataGenerator(
             name='train', zarr=X_train, y=y_train, 
-            batch_size=config.batch_size, limits=limits, 
+            batch_size=config.batch_size, bkgd_limits=bkgd_limits, 
             masked_model=config.masked_model, mask=mask, shuffle=True
         )
 
-        # initialize validation data generator
+        # Initialize validation data generator
         validation_data_generator = DataGenerator(
-            name='valid', zarr=X_valid, y=y_validate, 
-            batch_size=config.batch_size, limits=limits, 
+            name='valid', zarr=X_valid, y=y_valid, 
+            batch_size=config.batch_size, bkgd_limits=bkgd_limits, 
             masked_model=config.masked_model, mask=mask, shuffle=False
         )
 
@@ -469,10 +470,10 @@ def TRAIN_VAE(config):
         print('GPUs available: ', len(tf.config.list_physical_devices('GPU')))
         print()
         
-        # build model
+        # Build model
         if len(tf.config.list_physical_devices('GPU')) > 1:
             
-            # use distributed GPU strategy
+            # Use distributed GPU strategy
             strategy = tf.distribute.MirroredStrategy()  # use all GPUs
 
             with strategy.scope():
