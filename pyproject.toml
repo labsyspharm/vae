@@ -23,6 +23,7 @@ authors = ["Gregory J. Baker <gregory_baker2@hms.harvard.edu>"]
 homepage = "https://github.com/labsyspharm/vae"
 
 [tool.poetry.dependencies]
+python = ">=3.9"
 hdbscan = "*"
 umap-learn = "*"
 keras = "*"
@@ -34,7 +35,7 @@ seaborn = "*"
 tensorflow = "2.15.0"
 tensorflow-probability = "0.23.0"
 zarr = "<3.0.0"
-cellcutter = ">=0.2.10"
+cellcutter = {version = ">=0.2.10", source = "pypi"} # looks like v0.2.10 is not available through conda, but needed to run "cut_tiles" function 
 opencv-python = "*"
 dask = "*"
 ome-types = "*"
