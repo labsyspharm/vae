@@ -15,7 +15,7 @@ build:
   script:
     - "{{ PYTHON }} -m pip install . --no-deps --ignore-installed -vv "
     - "{{ PYTHON }} -m pip install git+https://github.com/catalystneuro/lazy_ops.git@master -vv "
-    - "{{ PYTHON }} -m pip install cellcutter -vv "  # cellcutter 0.2.10 not on conda yet
+    - "{{ PYTHON }} -m pip install cellcutter -vv "
   entry_points:
     - vae=vae.scripts.__main__:main
   noarch: python
