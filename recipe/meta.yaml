@@ -15,6 +15,7 @@ build:
   script:
     - "{{ PYTHON }} -m pip install . --no-deps --ignore-installed -vv "
     - "{{ PYTHON }} -m pip install git+https://github.com/catalystneuro/lazy_ops.git@master -vv "
+    - "{{ PYTHON }} -m pip install cellcutter -vv "  # cellcutter 0.2.10 not on conda yet
   entry_points:
     - vae=vae.scripts.__main__:main
   noarch: python
@@ -23,7 +24,8 @@ requirements:
   build:
     - poetry
   host:
-    - pip
+    - pip:
+      cellcutter
     - python
     - poetry
   run:
@@ -39,7 +41,6 @@ requirements:
     - tensorflow=2.15.0  # avoiding "from tensorflow.keras import XX" errors with tf >= 2.16 and making compatible with available o2 GPU CUDA modules.
     - tensorflow-probability=0.23.0  # compatible with TF 2.15.0
     - "zarr<3.0.0"
-    - cellcutter
     - opencv
     - dask
     - ome-types
