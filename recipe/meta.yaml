@@ -43,6 +43,9 @@ requirements:
     - opencv
     - dask
     - ome-types
+    - pytorch # used for Pytorch segmentation models 
+    - pytorch-lightning
+    - segmentation-models-pytorch
 
 test:
   imports:
