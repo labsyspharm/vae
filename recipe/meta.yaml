@@ -24,8 +24,7 @@ requirements:
   build:
     - poetry
   host:
-    - pip:
-      cellcutter
+    - pip
     - python
     - poetry
   run:
