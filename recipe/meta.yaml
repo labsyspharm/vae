@@ -15,7 +15,7 @@ build:
   script:
     - "{{ PYTHON }} -m pip install . --no-deps --ignore-installed -vv "
     - "{{ PYTHON }} -m pip install git+https://github.com/catalystneuro/lazy_ops.git@master -vv "
-    - "{{ PYTHON }} -m pip install cellcutter -vv "
+    - "{{ PYTHON }} -m pip install git+https://github.com/labsyspharm/cellcutter.git@main -vv "
   entry_points:
     - vae=vae.scripts.__main__:main
   noarch: python
@@ -25,10 +25,10 @@ requirements:
     - poetry
   host:
     - pip
-    - python >=3.11,<3.12
+    - python
     - poetry
   run:
-    - python >=3.11,<3.12
+    - python
     - hdbscan
     - umap-learn
     - keras
@@ -37,6 +37,8 @@ requirements:
     - pyarrow
     - pyyaml
     - seaborn
+    - tifffile
+    - scikit-image
     - tensorflow=2.15.0  # avoiding "from tensorflow.keras import XX" errors with tf >= 2.16 and making compatible with available o2 GPU CUDA modules.
     - tensorflow-probability=0.23.0  # compatible with TF 2.15.0
     - "zarr<3.0.0"
