@@ -25,10 +25,10 @@ requirements:
     - poetry
   host:
     - pip
-    - python
+    - python >=3.11,<3.12
     - poetry
   run:
-    - python
+    - python >=3.11,<3.12
     - hdbscan
     - umap-learn
     - keras
