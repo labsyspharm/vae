@@ -729,9 +729,11 @@ def mse(patch_dims, X_transform, y, X_seg, X_decoded, X_decoded_reversed, mse_pe
     plt.ylabel('Count')
     plt.savefig(os.path.join(save_dir, f'{filename}.png'), dpi=800)
 
+    threshold = np.percentile(errors, mse_percentile_cutoff)
     outlier_idxs = [
-        i for i, v in enumerate(errors) if v > np.percentile(errors, mse_percentile_cutoff)
+        i for i, v in enumerate(errors) if v > threshold
     ]
+
     X_transform_outliers = X_transform[outlier_idxs]
     y_outliers = y[outlier_idxs].reset_index(drop=True)
     X_outliers_seg = X_seg[outlier_idxs]
