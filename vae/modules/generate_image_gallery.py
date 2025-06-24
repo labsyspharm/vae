@@ -79,7 +79,6 @@ def PlotInputImgs(numExamples, numColumns, imgs, seg, intensity_multiplier, labe
             lyr = gray2rgb(lyr)
 
             lyr = lyr * intensity_multiplier
-            
             lyr = lyr * to_rgb(color)
             overlay += lyr
 

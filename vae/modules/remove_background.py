@@ -117,8 +117,8 @@ max_pixels = 2_000_000
 def REMOVE_BACKGROUND(config):
     
     if not os.path.exists(
-      os.path.join(config.output_path, 
-                   'checkpoints/REMOVE_BACKGROUND.txt')):
+       os.path.join(config.output_path, 
+                    'checkpoints/REMOVE_BACKGROUND.txt')):
 
         print()
         Poly = np.polynomial.Polynomial
@@ -128,7 +128,7 @@ def REMOVE_BACKGROUND(config):
             config.output_path,
             (f'3_cellcutter_output_win{config.window_size}/' +
              f'train_patches_{config.window_size}_qc.zip')
-            )
+        )
         store = zarr.ZipStore(path, mode='r')
         z = da.from_zarr(zarr.open(store=store))
 
@@ -154,12 +154,12 @@ def REMOVE_BACKGROUND(config):
                 logger.info(f'Storing channel limits for sample {sample}')
 
                 keys = [
-                    i for i in zip([sample]*len(config.tif_channels), 
+                    i for i in zip([sample] * len(config.tif_channels), 
                                    config.tif_channels)
                 ]
 
                 values = [
-                    i for i in [0]*len(config.tif_channels)
+                    i for i in [0] * len(config.tif_channels)
                 ]
 
                 for key, val in zip(keys, values):
@@ -168,7 +168,7 @@ def REMOVE_BACKGROUND(config):
             f = open(os.path.join(save_dir, 'bkgd_limits.yml'), 'w')
             out = {
                 str(k): v for k, v in bkgd_limits.items()
-            }  # Avoiding yaml formatting errors
+            }
             yaml.dump(out, f, sort_keys=False, allow_unicode=False)
 
             print()
@@ -203,7 +203,7 @@ def REMOVE_BACKGROUND(config):
                         logger.info(f'Plotting channel {marker}')
                         
                         for (sample, group), color in zip(
-                          csv.groupby('Sample'), colors):
+                                csv.groupby('Sample'), colors):
 
                             imgs = z[ch, group.index]
                             raveled_data = flatten_and_log_transform(
@@ -237,7 +237,7 @@ def REMOVE_BACKGROUND(config):
                             if str(imgs.dtype) == 'uint8':
                                 bins = 15
                             elif str(imgs.dtype) == 'uint16':
-                                bins = 200 
+                                bins = 30  # Lunaphore: 30  # CyCIF: 200
                             
                             # Get percentile values
                             p_min, p_max = np.percentile(

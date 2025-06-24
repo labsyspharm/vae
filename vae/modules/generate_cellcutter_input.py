@@ -15,8 +15,8 @@ logger = logging.getLogger(__name__)
 def GENERATE_CELLCUTTER_INPUT(config):
     
     if not os.path.isfile(
-      os.path.join(config.output_path,
-                   'checkpoints/GENERATE_CELLCUTTER_INPUT.txt')):
+       os.path.join(config.output_path,
+                    'checkpoints/GENERATE_CELLCUTTER_INPUT.txt')):
         
         save_dir = os.path.join(config.output_path, '1_cellcutter_input')
         if not os.path.exists(save_dir):
@@ -32,6 +32,8 @@ def GENERATE_CELLCUTTER_INPUT(config):
             raise ValueError(f'Note: extension type {extension} not supported.')
 
         #######################################################################
+        # weighted random sampling, etc.
+        
         # # drop noisy cells from HDBSCAN clustering
         # csv = csv[csv['cluster_3d'] != -1]
         
@@ -72,7 +74,7 @@ def GENERATE_CELLCUTTER_INPUT(config):
         logger.info(
             'Partitioning CyLinter dataframe into training, ' 
             'validation, and test sets...'
-            )
+        )
         print()
         
         # shuffle csv data

@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def append_artifact_mask_to_tif(img_path, mask_path):
-    """Create a temporary file to store TIF with artifact
+    """Create a temporary file to store TIFF with artifact
     mask appended as the last channel.
     """
     
@@ -45,7 +45,7 @@ def append_artifact_mask_to_tif(img_path, mask_path):
         combined = np.concatenate([stacked, mask_trim], axis=0)
 
         with tifffile.TiffWriter(
-          temp_tif_path, bigtiff=True) as tif_writer:
+             temp_tif_path, bigtiff=True) as tif_writer:
             tif_writer.write(
                 combined, metadata={'axes': 'CYX'}
             )
@@ -88,8 +88,8 @@ def RUN_CELLCUTTER(config):
                     processed_samples_patches.add(line.strip())
                 elif line.endswith('_seg\n'):
                     processed_samples_seg.add(line.strip())
-    
-    for name in ['train', 'test', 'validate']:  
+
+    for name in ['train', 'test', 'validate']:  # ['train', 'test', 'validate']
 
         X_combo = None
         X_combo_seg = None
@@ -146,44 +146,56 @@ def RUN_CELLCUTTER(config):
                 logger.info(f'Cutting data for {checkpoint_key_patches}...')
                 print()  
 
-                # Check pixel size of image (might want to move this elsewhere)
-                ome = ome_types.from_tiff(
-                    os.path.join(config.tif_path, f'{sample}.ome.tif')
-                )
+                # Handle paths to TIFFs, masks, and outlines
+                if os.path.exists(os.path.join(config.tif_path, f"{sample}.ome.tif")):
+                    # multi-tissue input
+                    tif_path = os.path.join(config.tif_path, f"{sample}.ome.tif")
+                else:
+                    # single-tissue input
+                    tif_path = config.tif_path
+    
+                if os.path.exists(os.path.join(config.mask_path, f"{sample}.ome.tif")):
+                    # multi-tissue input
+                    mask_path = os.path.join(config.mask_path, f"{sample}.ome.tif")
+                else:
+                    # single-tissue input
+                    mask_path = config.mask_path
+                
+                if os.path.exists(os.path.join(config.outlines_path, f"{sample}.ome.tif")):
+                    # multi-tissue input
+                    outlines_path = os.path.join(config.outlines_path, f"{sample}.ome.tif")
+                else:
+                    # single-tissue input
+                    outlines_path = config.outlines_path
+
+                # Check pixel size of image
+                ome = ome_types.from_tiff(tif_path)
                 num_tif_channels = len(ome.images[0].pixels.channels)
                 pixel_size_microns = (
                     ome.images[0].pixels.physical_size_x_quantity.to('micron')
                 )
                 logger.info(f'Physical pixel size = {pixel_size_microns}')
                 print()
-                
-                # Get paths to original TIFS and artifact masks
-                img_path = os.path.join(
-                        config.tif_path, f"{sample}.ome.tif" if
-                        os.path.exists(
-                            os.path.join(
-                                config.tif_path, f"{sample}.ome.tif"))
-                        else f"{sample}.tif"
-                     )
 
                 pattern = os.path.join(
                     artifact_detection_path, f'{sample}_mask_*.tif'
                 )
+
                 matches = glob.glob(pattern)
                 if not matches:
-                    raise FileNotFoundError(
-                        f"No matching files for: {pattern}"
+                    mask = False
+                    logger.info("Artifact mask file does not exist, cutting patches without QC")
+                    print()
+                    channels_to_cut = marker_channel_numbers 
+                else:
+                    mask = True
+                    mask_path = matches[0]
+                    tif_path = append_artifact_mask_to_tif(
+                        tif_path, mask_path
                     )
-                mask_path = matches[0]
-
-                temp_tif_path = append_artifact_mask_to_tif(
-                    img_path, mask_path
-                )
-                
-                channels_to_cut = (
-                    marker_channel_numbers + 
-                    [str(num_tif_channels+1)]
-                )
+                    channels_to_cut = (
+                        marker_channel_numbers + [str(num_tif_channels + 1)]
+                    )
 
                 # Run cellcutter to generate image patches
                 run(
@@ -191,18 +203,12 @@ def RUN_CELLCUTTER(config):
                      "--window-size", str(config.window_size),
                      "--cells-per-chunk", str(config.cells_per_chunk),
                      "--cache-size", str(config.cache_size_cellcutter), 
-                     str(temp_tif_path),
-                     str(os.path.join(
-                        config.mask_path, f"{sample}.ome.tif" if
-                        os.path.exists(
-                            os.path.join(
-                                config.mask_path, f"{sample}.ome.tif"))
-                        else f"{sample}.tif"
-                     )),
+                     str(tif_path),
+                     str(mask_path),
                      str(temp_csv_path),
                      os.path.join(
-                        save_dir, 
-                        f"{name}_{sample}_patches_{config.window_size}.zip"),
+                         save_dir, 
+                         f"{name}_{sample}_patches_{config.window_size}.zip"),
                      "--channels",  
                      ] + channels_to_cut
                 )
@@ -250,25 +256,12 @@ def RUN_CELLCUTTER(config):
                      "--window-size", str(config.window_size),
                      "--cells-per-chunk", str(config.cells_per_chunk),
                      "--cache-size", str(config.cache_size_cellcutter),
-                     str(os.path.join(
-                        config.outlines_path, f"{sample}.ome.tif" if
-                        os.path.exists(
-                            os.path.join(config.outlines_path,
-                                         f"{sample}.ome.tif")
-                        )
-                        else f"{sample}.tif"
-                     )), 
-                     str(os.path.join(
-                        config.mask_path, f"{sample}.ome.tif" if
-                        os.path.exists(
-                            os.path.join(config.mask_path, f"{sample}.ome.tif")
-                        )
-                        else f"{sample}.tif"
-                     )),
+                     str(outlines_path), 
+                     str(mask_path),
                      str(temp_csv_path),
                      os.path.join(
-                        save_dir, 
-                        f"{name}_{sample}_patches_{config.window_size}_seg.zip"
+                         save_dir, 
+                         f"{name}_{sample}_patches_{config.window_size}_seg.zip"
                      ),
                      "--channels", "1"
                      ]
@@ -317,22 +310,29 @@ def RUN_CELLCUTTER(config):
                         f"{name}_{sample}_patches_{config.window_size}_seg.zip")
                 )
                 os.remove(temp_csv_path)
-                os.remove(temp_tif_path)
+                if mask is True:
+                    os.remove(tif_path)
             except FileNotFoundError:
                 pass
 
+        ########################################################################
         # Filter combined zarrs to remove patches with artifacts
-        masks = X_combo[-1]  # artifact mask channel is last channel
-        remove_mask = (masks > 1).any(axis=(1, 2))
-        keep_mask = ~remove_mask
-        X_combo_qc = X_combo.oindex[0:-1, keep_mask, :, :]
-        X_combo_qc_seg = X_combo_seg.oindex[:, keep_mask, :, :]
-        csv = csv.iloc[keep_mask].reset_index(drop=True)
+        if config.AAD:
+            masks = X_combo[-1]  # artifact mask channel is last channel
+            remove_mask = (masks > 1).any(axis=(1, 2))
+            keep_mask = ~remove_mask
+            X_combo_qc = X_combo.oindex[0:-1, keep_mask, :, :]
+            X_combo_qc_seg = X_combo_seg.oindex[:, keep_mask, :, :]
+            csv = csv.iloc[keep_mask].reset_index(drop=True)
+        else:
+            X_combo_qc = X_combo
+            X_combo_qc_seg = X_combo_seg
+        
+        # Create new filtered csv and zarr arrays
         csv.to_csv(
             os.path.join(cellcutter_input_path, f'{name}_qc.csv'), index=False
         )
 
-        # Create new filtered zarr arrays
         filtered_zip_path = os.path.join(
             save_dir, f'{name}_patches_{config.window_size}_qc.zip'
         )
@@ -354,7 +354,7 @@ def RUN_CELLCUTTER(config):
 
         filtered_store.close()
         filtered_store_seg.close()
-        
+
         # Close the original collated zip stores
         if X_combo is not None:
             zip_store.close()

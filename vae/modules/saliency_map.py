@@ -28,7 +28,8 @@ from .deepexplain.tensorflow.methods import DeepExplain
 from .deepexplain.utils import preprocess
 from ..utils import (
     log_banner, log_multiline, transposeZarr, compute_vignette_mask,
-    log_transform, clip_outlier_pixels, reverse_processing
+    log_transform, clip_outlier_pixels, 
+    # reverse_processing
 )
 
 # Python's built-in random module is required 
@@ -40,14 +41,14 @@ random.seed(seed)
 def input_output(config):
 
     img_dims = (
-            config.window_size,
-            config.window_size, 
-            len(config.tif_channels)
-        )
+        config.window_size,
+        config.window_size, 
+        len(config.tif_channels)
+    )
 
     # create save dir
     save_dir = os.path.join(
-        config.output_path, f'8_saliency_map_LD{config.latent_dimension}'
+        config.output_path, f'7_saliency_map_LD{config.latent_dimension}'
     )
     if not os.path.exists(save_dir):
         os.mkdir(save_dir)
@@ -55,25 +56,25 @@ def input_output(config):
     # read combined training, validation, and test image patches
     combo_dir = os.path.join(
         config.output_path, 
-        f'7_latent_space_LD{config.latent_dimension}/combined_zarr'
+        f'6_latent_space_LD{config.latent_dimension}/combined_zarr'
     )
     X = zarr.open(combo_dir)
     X = transposeZarr(z=X)
     
     # load percentile cutoffs
-    # cutoffs_dir = os.path.join(
-    #     config.output_path, '5_feature_preprocessing_selections'
-    #     )
-    # with open(os.path.join(cutoffs_dir, 'cutoffs.pkl'), 'rb') as handle:
-    #     percentile_cutoffs = pickle.load(handle)
+    cutoffs_dir = os.path.join(
+        config.output_path, '4_feature_preprocessing_selections'
+    )
+    with open(os.path.join(cutoffs_dir, 'cutoffs.pkl'), 'rb') as handle:
+        percentile_cutoffs = pickle.load(handle)
     
-    background_dir = os.path.join(
-        config.output_path, '5_background_limits'
-        )
-    bkgd_limits = yaml.safe_load(
-                open(os.path.join(background_dir, 'bkgd_limits.yml'))
-            )
-    bkgd_limits = {eval(k): v for k, v in bkgd_limits.items()}
+    # background_dir = os.path.join(
+    #     config.output_path, '5_background_limits'
+    # )
+    # bkgd_limits = yaml.safe_load(
+    #     open(os.path.join(background_dir, 'bkgd_limits.yml'))
+    # )
+    # bkgd_limits = {eval(k): v for k, v in bkgd_limits.items()}
 
     # image contrast limits
     contrast_limits = yaml.safe_load(open(config.contrast_path))
@@ -81,7 +82,7 @@ def input_output(config):
     # load previously saved encoder and decoder
     try:
         encoder = load_model(
-            os.path.join(config.output_path, '6_train_vae/encoder.hdf5')
+            os.path.join(config.output_path, '5_train_vae/encoder.hdf5')
         )
     except OSError:
         print('Encoder not found.')
@@ -89,7 +90,7 @@ def input_output(config):
 
     try:
         decoder = load_model(
-            os.path.join(config.output_path, '6_train_vae/decoder.hdf5')
+            os.path.join(config.output_path, '5_train_vae/decoder.hdf5')
         )
     except OSError:
         print('Decoder not found.')
@@ -144,6 +145,37 @@ def input_output(config):
     
     return (img_dims, save_dir, X, percentile_cutoffs, 
             contrast_limits, encodings, encoder, decoder, clusters)
+
+
+# ACHIVAL VERSION
+def reverse_processing(percentile_cutoffs, channel_slice, channel_name, contrast_limits):
+    """Reverses percentile normalization and log10-transformation,
+       pixel outliers remained clipped)."""
+
+    lower_cutoff_log, upper_cutoff_log = percentile_cutoffs[channel_name]
+
+    # reverse percentile normalization
+    channel_slice = (
+        (((upper_cutoff_log - lower_cutoff_log) * (channel_slice - 0)) /
+         (1 - 0)) + lower_cutoff_log
+    )
+
+    # reverse log10-transform
+    channel_slice = np.rint(10 ** channel_slice)
+
+    # Normalize pixel values between lower and upper percentile bounds
+    # lower = np.rint(10**lower_cutoff_log)
+    # upper = np.rint(10**upper_cutoff_log)
+    # channel_slice = (channel_slice-lower) / (upper-lower)
+
+    # Apply image contrast settings
+    lower = contrast_limits[channel_name][0]
+    upper = contrast_limits[channel_name][1]
+    channel_slice = (channel_slice - lower) / (upper - lower)
+
+    channel_slice = np.clip(channel_slice, 0, 1)
+
+    return channel_slice
 
 
 def DecodeVectors(decoder, img_dims, concept_vectors, percentile_cutoffs, contrast_limits, channel_color_dict, intensity_multiplier):
@@ -288,7 +320,8 @@ def SALIENCY_MAP(config):
             X_transform *= mask
         
         ############################################################
-
+        # OLD IMPLEMENTATION (COMPUTES FULL COSINE SIMILARITY MATRIX)
+        
         # if not os.path.exists(os.path.join(save_dir, 'concept_vectors.pkl')):
 
         #     # select image patch encodings with highest average cosine
@@ -374,7 +407,9 @@ def SALIENCY_MAP(config):
                 mean_encoding = z_plus.mean()
 
                 cos = [
-                    cosine_similarity(mean_encoding.values.reshape(1, -1), i[1].values.reshape(1, -1))
+                    cosine_similarity(
+                        mean_encoding.values.reshape(1, -1), i[1].values.reshape(1, -1)
+                    )
                     for i in z_plus.iterrows()
                 ]
                 
@@ -407,7 +442,7 @@ def SALIENCY_MAP(config):
                 concept_vectors[concept] = zc
 
             with open(
-              os.path.join(save_dir, 'concept_vectors.pkl'), 'wb') as handle:
+                    os.path.join(save_dir, 'concept_vectors.pkl'), 'wb') as handle:
                 pickle.dump(
                     concept_vectors, handle, protocol=pickle.HIGHEST_PROTOCOL)
             print()
@@ -416,7 +451,7 @@ def SALIENCY_MAP(config):
             print('Loading concept vectors...')
             print()
             with open(
-              os.path.join(save_dir, 'concept_vectors.pkl'), 'rb') as handle:
+                    os.path.join(save_dir, 'concept_vectors.pkl'), 'rb') as handle:
                 concept_vectors = pickle.load(handle)
         
         ############################################################
@@ -434,11 +469,11 @@ def SALIENCY_MAP(config):
             intensity_multiplier=decoded_intensity_multiplier
         )
         
-        fig = plt.figure(figsize=(11, 3.9))  # VAE9_VIG7
-        # fig = plt.figure(figsize=(9, 2.7))  # VAE30
+        # fig = plt.figure(figsize=(11, 3.9))  # VAE9_VIG7
+        fig = plt.figure(figsize=(9, 2.7))  # VAE30
         
         rows_rounded_up = len(concepts) // 8 + bool(len(concepts) % 8)
-        height_ratios = [1]*rows_rounded_up
+        height_ratios = [1] * rows_rounded_up
         
         rows, cols = (rows_rounded_up, 8)
         # rows, cols = (3, 8)  # VAE9_VIG7   
@@ -457,9 +492,9 @@ def SALIENCY_MAP(config):
             overlay = gray2rgb(overlay)
 
             inner_gs = gridspec.GridSpecFromSubplotSpec(
-                        2, 1, subplot_spec=outer_gs[concept], 
-                        height_ratios=[0.3, 1], hspace=-0.2
-                    )
+                2, 1, subplot_spec=outer_gs[concept], 
+                height_ratios=[0.3, 1], hspace=-0.2
+            )
             
             ax1 = fig.add_subplot(inner_gs[0])
             ax1.bar(
@@ -501,16 +536,20 @@ def SALIENCY_MAP(config):
             bbox_to_anchor=(0.99, 0.99), handlelength=1.0,
             frameon=False
         )
+        
+        # VAE9_VIG7
         plt.subplots_adjust(
             left=0.04, right=0.87,
             bottom=0.02, top=0.97,
             hspace=0.0, wspace=0.0
-        )  # VAE9_VIG7
+        ) 
+
+        # VAE30
         # plt.subplots_adjust(
         #     left=0.04, right=0.84, 
         #     bottom=0.01, top=0.97,
         #     hspace=0.0, wspace=0.0
-        # )  # VAE30
+        # )  
 
         plt.savefig(
             os.path.join(save_dir, 'decoded_concept_vectors.pdf')
@@ -540,15 +579,16 @@ def SALIENCY_MAP(config):
                     columns=['CellID', 'cluster']
                 )
 
-                scores_plus = [np.sum(cv*j) for j in np.array(z_plus)]
-                scores_minus = [np.sum(cv*j) for j in np.array(z_minus)]
+                scores_plus = [np.sum(cv * j) for j in np.array(z_plus)]
+                scores_minus = [np.sum(cv * j) for j in np.array(z_minus)]
                 
                 concept_scores[concept] = {
-                    'plus': scores_plus, 'minus': scores_minus, 'plus_idxs': z_plus.index,
+                    'plus': scores_plus, 'minus': scores_minus, 
+                    'plus_idxs': z_plus.index
                 }
             
             with open(
-              os.path.join(save_dir, 'concept_scores.pkl'), 'wb') as handle:
+                    os.path.join(save_dir, 'concept_scores.pkl'), 'wb') as handle:
                 pickle.dump(
                     concept_scores, handle, protocol=pickle.HIGHEST_PROTOCOL)
             print()
@@ -556,7 +596,7 @@ def SALIENCY_MAP(config):
             print('Loading concept scores...')
             print()
             with open(
-              os.path.join(save_dir, 'concept_scores.pkl'), 'rb') as handle:
+                    os.path.join(save_dir, 'concept_scores.pkl'), 'rb') as handle:
                 concept_scores = pickle.load(handle)
         
         ############################################################
@@ -568,7 +608,9 @@ def SALIENCY_MAP(config):
             
             for concept in concept_scores.keys():
 
-                print(f'Isolating indices for patches with top concept scores for concept {concept}...')
+                print(
+                    'Isolating indices for patches with top concept' 
+                    f' scores for concept {concept}...')
                 
                 scores_pls_df = pd.DataFrame(
                     concept_scores[concept]['plus'],
@@ -582,7 +624,7 @@ def SALIENCY_MAP(config):
                 top_scores[concept] = tuple(nearest_idxs)
             
             with open(
-              os.path.join(save_dir, 'top_scores.pkl'), 'wb') as handle:
+                    os.path.join(save_dir, 'top_scores.pkl'), 'wb') as handle:
                 pickle.dump(
                     top_scores, handle, protocol=pickle.HIGHEST_PROTOCOL)
             print()
@@ -590,7 +632,7 @@ def SALIENCY_MAP(config):
             print('Loading indices for patches with top concept scores...')
             print()
             with open(
-              os.path.join(save_dir, 'top_scores.pkl'), 'rb') as handle:
+                    os.path.join(save_dir, 'top_scores.pkl'), 'rb') as handle:
                 top_scores = pickle.load(handle)
         
         ############################################################
@@ -599,8 +641,11 @@ def SALIENCY_MAP(config):
         
         print('Plotting concept score histograms...')
         
-        fig, axs = plt.subplots(3, 8, figsize=(11.5, 3.5))  # VAE9_VIG7
-        # fig, axs = plt.subplots(2, 6, figsize=(9, 2.5))  # VAE30
+        # VAE9_VIG7
+        fig, axs = plt.subplots(3, 8, figsize=(11.5, 3.5))
+
+        # VAE30 
+        # fig, axs = plt.subplots(2, 6, figsize=(9, 2.5))
         
         axs = axs.flatten()
         
@@ -636,27 +681,30 @@ def SALIENCY_MAP(config):
             Line2D([0], [0], color=plus_color, alpha=0.75, 
                    lw=6, label='Concept Pos.'),
         ]
+
+        # VAE9_VIG7
         fig.legend(
             handles=legend_elements, prop={'size': 5}, 
             bbox_to_anchor=(0.115, 0.95), handlelength=1, 
             frameon=False
-        )  # VAE9_VIG7
-        # fig.legend(
-        #     handles=legend_elements, prop={'size': 5}, 
-        #     bbox_to_anchor=(0.143, 0.935), handlelength=1, 
-        #     frameon=False
-        # )  # VAE30
-
+        )
         plt.subplots_adjust(
             left=0.05, right=0.99,
             bottom=0.05, top=0.95, 
             hspace=0.4, wspace=0.6
-        )  # VAE9_VIG7
+        )  
+
+        # VAE30
+        # fig.legend(
+        #     handles=legend_elements, prop={'size': 5}, 
+        #     bbox_to_anchor=(0.143, 0.935), handlelength=1, 
+        #     frameon=False
+        # )
         # plt.subplots_adjust(
         #     left=0.06, right=0.99, 
         #     bottom=0.07, top=0.93, 
         #     hspace=0.4, wspace=0.6
-        # )  # VAE30
+        # )
 
         plt.savefig(os.path.join(save_dir, 'concept_score_hists.pdf'))
         plt.close('all')
@@ -670,9 +718,9 @@ def SALIENCY_MAP(config):
         latent = encoder(input_layer)
         
         concept_scores = [
-            K.sum(cv*latent) for (concept, cv) in 
+            K.sum(cv * latent) for (concept, cv) in 
             concept_vectors.items()
-            ]
+        ]
 
         # THE KEY TO GETTING DEEPEXPLAIN LEGACY CODE TO WORK WITH TF2
         # IS USING "tensorflow.compat.v1" AND THIS NEXT LINE!
@@ -690,22 +738,22 @@ def SALIENCY_MAP(config):
                         attrs = de.explain(
                             method, concept_scores[e], input_layer, img,
                             percentile=rectgrad_percentile_threshold
-                            )
+                        )
                     
                     elif method == 'occlusion':  # for perturbation methods
                         attrs = de.explain(
                             method, concept_scores[e], input_layer, img,
                             window_shape=occlusion_window, step=(1, 1, 1)
-                            )
+                        )
                     
                     else:
                         attrs = de.explain(
                             method, concept_scores[e], input_layer, img,
-                            )
+                        )
 
                     (attrs_processed, 
-                    attrs_threshold_low,
-                    attrs_threshold_high) = preprocess(attrs, q1, q2)
+                     attrs_threshold_low,
+                     attrs_threshold_high) = preprocess(attrs, q1, q2)
 
                     if config.masked_model:  # undo vignette mask
 
@@ -728,9 +776,9 @@ def SALIENCY_MAP(config):
                     for ch, channel_name in enumerate(config.tif_channels):
 
                         inner_gs = gridspec.GridSpecFromSubplotSpec(
-                                    1, 2, subplot_spec=outer_gs[ch], 
-                                    hspace=0.0, wspace=0.05
-                                )
+                            1, 2, subplot_spec=outer_gs[ch], 
+                            hspace=0.0, wspace=0.05
+                        )
                         
                         overlay = np.zeros((img_dims[0], img_dims[1]))
                         overlay = gray2rgb(overlay)
@@ -791,15 +839,14 @@ def SALIENCY_MAP(config):
                             cbar.ax.tick_params(labelsize=6)
 
                             last_gs = gridspec.GridSpecFromSubplotSpec(
-                                1, 2, subplot_spec=outer_gs[ch+1], 
+                                1, 2, subplot_spec=outer_gs[ch + 1], 
                                 hspace=0.0, wspace=0.0
                             )
 
                             merge = np.zeros((img_dims[0], img_dims[1]))
                             merge = gray2rgb(merge)
                             
-                            for ch2, channel_name2 in enumerate(
-                            config.tif_channels):
+                            for ch2, channel_name2 in enumerate(config.tif_channels):
                                 if channel_name2 in merge_channels:
                                     
                                     channel_slice = img[0, :, :, ch2]
@@ -833,7 +880,7 @@ def SALIENCY_MAP(config):
                     for channel_name, (ch, color) in config.channel_colors.items():
                         legend_elements.append(
                             Line2D([0], [0], color=color, lw=5, 
-                                label=antibody_abbrs[channel_name])
+                                   label=antibody_abbrs[channel_name])
                         )
                     fig.legend(
                         handles=legend_elements, prop={'size': 8},
@@ -849,7 +896,7 @@ def SALIENCY_MAP(config):
 
                     plt.savefig(
                         os.path.join(
-                            save_dir, f'concept{concept}_attrs_{img_idx}.pdf'
+                            save_dir, f'concept{concept:02}_cellID_{img_idx}.pdf'
                         )
                     )
                     plt.close('all')

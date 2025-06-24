@@ -360,8 +360,8 @@ def build_and_fit_model(img_shape, latent_dimension, learning_rate, training_epo
 def TRAIN_VAE(config):
 
     if not os.path.isfile(
-      os.path.join(config.output_path,
-                   'checkpoints/TRAIN_VAE.txt')):
+       os.path.join(config.output_path,
+                    'checkpoints/TRAIN_VAE.txt')):
 
         # clear backend, set random state seed
         K.clear_session()

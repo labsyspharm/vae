@@ -248,16 +248,16 @@ def num_legend_columns(bbox, ax, legend_elements, size=10):
     x_axis_width, y_axis_height = bbox.width, bbox.height
 
     # determine the maximum number of entries per column based on y-axis height
-    denominator = 0.4 # adjust denominator based on your legend entry height
-    max_entries_per_column = int(y_axis_height / denominator)  
+    denominator = 0.1  # adjust denominator based on your legend entry height
+    max_entries_per_column = int(y_axis_height / denominator) 
 
     # create multiple columns for the legend if necessary
     if num_legend_entries > max_entries_per_column:
         num_columns = (num_legend_entries // max_entries_per_column) + 1
     else:
         num_columns = 1
-    
+
     ax.legend(
         handles=legend_elements, prop={'size': size}, labelspacing=0.5, 
-        bbox_to_anchor=(1.01, 1.0), ncol=num_columns, columnspacing=0.3
+        bbox_to_anchor=(1.01, 1.0), loc='upper left', ncol=num_columns, columnspacing=0.3
     )

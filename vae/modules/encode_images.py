@@ -1,7 +1,6 @@
 import os
 import sys
 import yaml
-import yaml
 import logging
 
 import numpy as np
@@ -41,7 +40,7 @@ from joblib import Memory
 
 from ..utils import (
     log_banner, log_multiline, log_transform, 
-    remove_background, clip_outlier_pixels, compute_vignette_mask, 
+    remove_background, compute_vignette_mask, 
     transposeZarr, reverse_processing, num_legend_columns
 )
 
@@ -51,9 +50,10 @@ logger = logging.getLogger(__name__)
 # log_multiline(logger.info, pd.DataFrame().to_string(index=False))
 # log_banner(logger.info, 'Boolean classifications')
 
+
 def categorical_cmap(numUniqueSamples, numCatagories, cmap='tab10', continuous=False):
 
-    numSubcatagories = math.ceil(numUniqueSamples/numCatagories)
+    numSubcatagories = math.ceil(numUniqueSamples / numCatagories)
 
     if numCatagories > plt.get_cmap(cmap).N:
         raise ValueError('Too many categories for colormap.')
@@ -72,31 +72,11 @@ def categorical_cmap(numUniqueSamples, numCatagories, cmap='tab10', continuous=F
             cd['R'], cd['Cy'], cd['Br'], cd['Gr'], cd['Pi']
         ]
         ccolors = [ccolors[i] for i in myorder]
-
-        # for multi-tissue analysis
-        # ccolors[0] = np.array([0.12156862745098039, 0.4666666666666667, 0.7058823529411765])
-        # ccolors[1] = np.array([1.0, 0.4980392156862745, 0.054901960784313725])
-        # ccolors[2] = np.array([0.17254901960784313, 0.6274509803921569, 0.17254901960784313])
-
-        # for binary patch analysis
-        # ccolors[0] = np.array([0.122, 0.467, 0.706])
-        # ccolors[1] = np.array([0.682, 0.780, 0.910])
-        # ccolors[2] = np.array([1.00, 0.733, 0.471])
-        # ccolors[3] = np.array([0.598, 0.875, 0.543])
-        # ccolors[4] = np.array([0.839, 0.153, 0.157])
-        # ccolors[5] = np.array([0.0, 0.0, 0.0])
-
-        # ccolors[0] = np.array([1.0, 1.0, 1.0])
-        # ccolors[1] = np.array([1.0, 1.0, 1.0])
-        # ccolors[2] = np.array([1.0, 1.0, 1.0])
-        # ccolors[3] = np.array([1.0, 1.0, 1.0])
-        # ccolors[4] = np.array([0.839, 0.153, 0.157])
-        # ccolors[5] = np.array([1.0, 1.0, 1.0])
         
         # regular palette
         # use Okabe and Ito color-safe palette for first 6 colors
-        ccolors[0] = np.array([0.91, 0.29, 0.235]) #E84A3C
-        ccolors[1] = np.array([0.18, 0.16, 0.15]) #2E2926
+        ccolors[0] = np.array([0.91, 0.29, 0.235])  # E84A3C
+        ccolors[1] = np.array([0.18, 0.16, 0.15])  # 2E2926
         ccolors[0] = np.array([0.0, 0.447, 0.698, 1.0])  # blue
         ccolors[1] = np.array([0.902, 0.624, 0.0, 1.0])  # orange
         ccolors[2] = np.array([0.0, 0.620, 0.451, 1.0])  # bluish green
@@ -163,26 +143,9 @@ def PlotLatentSpace(reconstructions, zoom, X_encoded_embedded, X_decoded_reverse
             X_encoded_embedded[:, 0], X_encoded_embedded[:, 1], 
             c='k', s=0.0, ec='k', lw=0.25, zorder=4
         )
-
-        # Calculate the number of legend entries and the height of the y-axis
-        num_legend_entries = len(legend_elements)
-        y_axis_height = ax.get_ylim()[1] - ax.get_ylim()[0]
-
-        # Determine the maximum number of entries per column based on y-axis height
-        max_entries_per_column = int(y_axis_height / 1.0)  # Adjust denominator based on your legend entry height
-
-        # Create multiple columns for the legend if necessary
-        if num_legend_entries > max_entries_per_column:
-            num_columns = (num_legend_entries // max_entries_per_column) + 1
-            plt.legend(
-                handles=legend_elements, prop={'size': 10}, labelspacing=0.5, 
-                bbox_to_anchor=(1.15, 1.0), ncol=num_columns, columnspacing=0.3
-            )
-        else:
-            plt.legend(
-                handles=legend_elements, prop={'size': 10}, labelspacing=0.5, 
-                bbox_to_anchor=(1.15, 1.0), columnspacing=0.3
-            )
+        
+        bbox = ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
+        num_legend_columns(bbox=bbox, ax=ax, legend_elements=legend_elements)
 
         ax.set_aspect('equal', adjustable='box')
         plt.grid(False)
@@ -230,29 +193,12 @@ def PlotLatentSpace(reconstructions, zoom, X_encoded_embedded, X_decoded_reverse
 
             legend_elements.append(
                 Line2D([0], [0], marker='o', color='w', label=i,
-                        markerfacecolor=cmap.colors[e], 
-                        markeredgecolor=None, lw=0.25, markersize=9)
+                       markerfacecolor=cmap.colors[e], 
+                       markeredgecolor=None, lw=0.25, markersize=9)
             )
 
-        # Calculate the number of legend entries and the height of the y-axis
-        num_legend_entries = len(legend_elements)
-        y_axis_height = ax.get_ylim()[1] - ax.get_ylim()[0]
-
-        # Determine the maximum number of entries per column based on y-axis height
-        max_entries_per_column = int(y_axis_height / 1.0)  # Adjust denominator based on your legend entry height
-
-        # Create multiple columns for the legend if necessary
-        if num_legend_entries > max_entries_per_column:
-            num_columns = (num_legend_entries // max_entries_per_column) + 1
-            plt.legend(
-                handles=legend_elements, prop={'size': 10}, labelspacing=0.5, 
-                bbox_to_anchor=(1.01, 1.0), ncol=num_columns, columnspacing=0.3
-            )
-        else:
-            plt.legend(
-                handles=legend_elements, prop={'size': 10}, labelspacing=0.5, 
-                bbox_to_anchor=(1.01, 1.0), columnspacing=0.3
-            )
+        bbox = ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
+        num_legend_columns(bbox=bbox, ax=ax, legend_elements=legend_elements)
 
         ax.set_aspect('equal', adjustable='box')
         plt.grid(False)
@@ -269,14 +215,17 @@ def DecodeVectors(decoder, X_encoded, X, X_seg, sample_labels, bkgd_limits, cont
     # decode latent vector
     print('Decoding images...')
     X_decoded = decoder.predict(X_encoded, batch_size=200)
-    X_decoded = da.from_array(X_decoded, chunks=(chunk_size, patch_dims[0], patch_dims[1], patch_dims[2]))
+    X_decoded = da.from_array(
+        X_decoded, chunks=(chunk_size, patch_dims[0], patch_dims[1], patch_dims[2])
+    )
 
     X_decoded_reversed = da.map_blocks(
         reverse_processing, X_decoded, X, sample_labels,
         bkgd_limits, contrast_limits, mask,
-        dtype=np.float32  # dtype required to avoid ValueError: dtype inference failed in map_blocks
+        dtype=np.float32  
+        # dtype required to avoid ValueError: dtype inference failed in map_blocks
     )  # call .compute() to debug
-
+    
     # slice out channels to visualize
     channel_indices = np.array([tif_channels.index(i) for i in channel_color_dict.keys()])
     X_decoded_reversed = X_decoded_reversed[:, :, :, channel_indices]
@@ -310,11 +259,11 @@ def DecodeVectors(decoder, X_encoded, X, X_seg, sample_labels, bkgd_limits, cont
 
     # rechunk reverse processed image patches
     X_decoded_reversed = da.rechunk(
-    X_decoded_reversed, 
-    chunks=(X_decoded_reversed.chunksize[0], 
-            X_decoded_reversed.chunksize[1],
-            X_decoded_reversed.chunksize[2],
-            3)
+        X_decoded_reversed, 
+        chunks=(X_decoded_reversed.chunksize[0], 
+                X_decoded_reversed.chunksize[1],
+                X_decoded_reversed.chunksize[2],
+                3)
     )
 
     return X_decoded, X_decoded_reversed
@@ -390,7 +339,8 @@ def LassoVectors(contrast_limits, patch_dims, imgs_instead_of_points, zoom, X, X
     if imgs_instead_of_points is True:
 
         ScatterReconstructions(
-            X_decoded=X_decoded_reversed, X_encoded_embedded=X_encoded_embedded, zoom=zoom, ax=lasso_ax
+            X_decoded=X_decoded_reversed, X_encoded_embedded=X_encoded_embedded, 
+            zoom=zoom, ax=lasso_ax
         )
 
         legend_elements = []
@@ -409,11 +359,6 @@ def LassoVectors(contrast_limits, patch_dims, imgs_instead_of_points, zoom, X, X
             numCatagories=10, cmap='tab10', continuous=False
         )
 
-        label_color_dict = dict(
-            zip(natsorted(y.unique()), 
-                [tuple(i) for i in cmap.colors])
-        )
-
         if -1 in y.unique():
             # make black the first color to specify
             # cluster outliers (i.e. cluster -1 cells)
@@ -427,14 +372,19 @@ def LassoVectors(contrast_limits, patch_dims, imgs_instead_of_points, zoom, X, X
 
         hue_dict = dict(
             zip(natsorted(y.unique()), 
-                list(range(len(y.unique()))))
+                [tuple(i) for i in cmap.colors])
         )
 
         c = [hue_dict[i] for i in y]
 
-        pts = lasso_ax.scatter(data['x'], data['y'], c=c, s=30.0, ec='k', lw=0.25, zorder=4)
+        pts = lasso_ax.scatter(
+            X_encoded_embedded[:, 0], X_encoded_embedded[:, 1],
+            c=c, s=30.0, ec='k', lw=0.25, zorder=4
+        )
 
-        lasso_ax.update_datalim(np.column_stack([data['x'], data['y']]))
+        lasso_ax.update_datalim(
+            np.column_stack([X_encoded_embedded[:, 0], X_encoded_embedded[:, 1]])
+        )
         lasso_ax.autoscale()
 
         legend_elements = []
@@ -442,8 +392,8 @@ def LassoVectors(contrast_limits, patch_dims, imgs_instead_of_points, zoom, X, X
 
             legend_elements.append(
                 Line2D([0], [0], marker='o', color='w', label=i,
-                        markerfacecolor=cmap.colors[e], 
-                        markeredgecolor=None, lw=0.25, markersize=9)
+                       markerfacecolor=cmap.colors[e], 
+                       markeredgecolor=None, lw=0.25, markersize=9)
             )
     
     bbox = lasso_ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
@@ -462,7 +412,7 @@ def LassoVectors(contrast_limits, patch_dims, imgs_instead_of_points, zoom, X, X
             fig.canvas.draw()
 
     fig.canvas.mpl_connect("key_press_event", accept)
-    lasso_ax.set_title("Press enter to accept selected points.")
+    lasso_ax.set_title("Press enter to accept selected points, then close window.")
     lasso_ax.set_aspect('equal')
     plt.show(block=True)
 
@@ -489,7 +439,7 @@ def LassoVectors(contrast_limits, patch_dims, imgs_instead_of_points, zoom, X, X
     fig = plt.figure()
 
     fig.text(0.13, 0.97, 'Input Images', ha='left', fontsize='medium')
-    fig.text(0.53, 0.97, 'Learned Representations', fontsize='medium')
+    fig.text(0.53, 0.97, 'Learned Reconstructions', fontsize='medium')
 
     outer_grid_rows = 1
     outer_grid_cols = 2
@@ -521,11 +471,9 @@ def LassoVectors(contrast_limits, patch_dims, imgs_instead_of_points, zoom, X, X
 
                 # apply image contrast settings to reverse-transformed channel slice
                 lower = np.array(
-                    [i[0] for i in contrast_limits.values()]).reshape(1, 1, input_img.shape[2]
-                )
+                    [i[0] for i in contrast_limits.values()]).reshape(1, 1, input_img.shape[2])
                 upper = np.array(
-                    [i[1] for i in contrast_limits.values()]).reshape(1, 1, input_img.shape[2]
-                )
+                    [i[1] for i in contrast_limits.values()]).reshape(1, 1, input_img.shape[2])
 
                 input_img = (input_img - lower) / (upper - lower)
 
@@ -571,7 +519,7 @@ def LassoVectors(contrast_limits, patch_dims, imgs_instead_of_points, zoom, X, X
             
             ax.imshow(overlay)
 
-            ax.set_xlabel(label['label'], fontsize=patch_font_size, labelpad=0.75)
+            # ax.set_xlabel(label['label'], fontsize=patch_font_size, labelpad=0.75)
             fig.add_subplot(ax)
 
     fig.subplots_adjust(bottom=0.01, top=0.94, left=0.01, right=0.85, wspace=0.2, hspace=0.1)
@@ -597,6 +545,8 @@ def PlotReconstructedImages(patch_dims, X, y, X_seg, X_decoded_reversed, contras
     selected_labels.sort_values(by='label', inplace=True)
     # selected_labels.sort_index(inplace=True)  # sort by row index for efficient indexing
 
+    selected_labels.reset_index(drop=True, inplace=True)
+
     # isolated encodings and image patches associated with lasso selection
     X = X[selected_labels.index]
     X_seg = X_seg[selected_labels.index]
@@ -609,7 +559,7 @@ def PlotReconstructedImages(patch_dims, X, y, X_seg, X_decoded_reversed, contras
     fig = plt.figure()
 
     fig.text(0.13, 0.97, 'Input Images', ha='left', fontsize='medium')
-    fig.text(0.53, 0.97, 'Learned Representations', ha='left', fontsize='medium')
+    fig.text(0.53, 0.97, 'Learned Reconstructions', ha='left', fontsize='medium')
 
     outer_grid_rows = 1
     outer_grid_cols = 2
@@ -641,11 +591,9 @@ def PlotReconstructedImages(patch_dims, X, y, X_seg, X_decoded_reversed, contras
 
                 # apply image contrast settings
                 lower = np.array(
-                    [i[0] for i in contrast_limits.values()]).reshape(1, 1, input_img.shape[2]
-                )
+                    [i[0] for i in contrast_limits.values()]).reshape(1, 1, input_img.shape[2])
                 upper = np.array(
-                    [i[1] for i in contrast_limits.values()]).reshape(1, 1, input_img.shape[2]
-                )
+                    [i[1] for i in contrast_limits.values()]).reshape(1, 1, input_img.shape[2])
 
                 input_img = (input_img - lower) / (upper - lower)
 
@@ -691,7 +639,7 @@ def PlotReconstructedImages(patch_dims, X, y, X_seg, X_decoded_reversed, contras
             
             ax.imshow(overlay)
 
-            ax.set_xlabel(label['label'], fontsize=patch_font_size, labelpad=0.75)
+            # ax.set_xlabel(label['label'], fontsize=patch_font_size, labelpad=0.75)
             fig.add_subplot(ax)
 
     fig.subplots_adjust(bottom=0.01, top=0.94, left=0.01, right=0.85, wspace=0.2, hspace=0.1)
@@ -741,7 +689,8 @@ def mse(patch_dims, X_transform, y, X_seg, X_decoded, X_decoded_reversed, mse_pe
 
     plt.close('all')
 
-    return average_error, errors, X_transform_outliers, y_outliers, X_outliers_seg, X_decoded_reversed, outlier_idxs
+    return (average_error, errors, X_transform_outliers, y_outliers, X_outliers_seg,
+            X_decoded_reversed, outlier_idxs, X_decoded_reversed_outliers)
 
 
 def InterpolationGrid(patch_dims, grid_size, X_encoded, y, decoder, label_color_dict, channel_color_dict, frac_of_scatter_points, scatter_point_size, make_sample_sizes_equal, img_brightness_multiplier, scatter_point_alpha, save_dir):
@@ -924,7 +873,7 @@ def InterpolationGrid(patch_dims, grid_size, X_encoded, y, decoder, label_color_
 def ENCODE_IMAGES(config):
 
     if not os.path.isfile(
-      os.path.join(config.output_path, 'checkpoints/ENCODE_IMAGES.txt')):
+       os.path.join(config.output_path, 'checkpoints/ENCODE_IMAGES.txt')):
         
         ###########################################################################
         # I/O
@@ -949,8 +898,10 @@ def ENCODE_IMAGES(config):
         bkgd_limits = {eval(k): v for (k, v) in bkgd_limits.items()}
 
         contrast_limits = yaml.safe_load(open(config.contrast_path))
-        contrast_limits = {k: contrast_limits[k] for k in config.tif_channels}  # ensure keys in config.tif_channel order
-
+        
+        # ensure keys in config.tif_channel order
+        contrast_limits = {k: contrast_limits[k] for k in config.tif_channels}  
+        
         # load previously saved encoder and decoder
         try:
             encoder = load_model(
@@ -1109,56 +1060,7 @@ def ENCODE_IMAGES(config):
         # combine labels for training, validation, and test data
         y = pd.concat([y_train, y_validate, y_test], axis=0)
         y['Sample'] = y['Sample'].astype(str)
-        
-        ############################################################
-        # FOR TAJA
 
-        # y = pd.read_parquet(os.path.join(save_dir, 'clustering.parquet'))
-        # # y = pd.read_parquet(
-        # #     '/Volumes/T7 Shield/cylinter_input/taja/cylinter/output('
-        # #     'FINAL_CLASS_FILTERED_CORE_DROPPED_PHENOS)/checkpoints/'
-        # #     'clustering.parquet'
-        # # )
-        # y['Sample'] = y['Sample'].astype(str)
-        
-        # drop1 = pd.read_parquet(
-        #     os.path.join(save_dir, 'clustering_drop_edge_artifacts.parquet')
-        # )
-        # # drop1 = pd.read_parquet(
-        # #     '/Volumes/T7 Shield/cylinter_input/taja/cylinter/output(FINAL_CLASS_FILTERED_CORE_DROPPED_PHENOS)/checkpoints/clustering_drop_edge_artifacts.parquet'
-        # # )
-        # all_indices = np.arange(X.shape[0])
-        # indices_to_keep = np.setdiff1d(all_indices, drop1.index)
-        # X = X[indices_to_keep]
-        
-        # drop2 = pd.read_parquet(
-        #     os.path.join(save_dir, 'clustering_drop_microscopy_artifacts.parquet')
-        # )
-        # # drop2 = pd.read_parquet(
-        # #     '/Volumes/T7 Shield/cylinter_input/taja/cylinter/output(FINAL_CLASS_FILTERED_CORE_DROPPED_PHENOS)/checkpoints/clustering_drop_microscopy_artifacts.parquet'
-        # # )
-        # all_indices = np.arange(X.shape[0])
-        # indices_to_keep = np.setdiff1d(all_indices, drop2.index)
-        # X = X[indices_to_keep]
-
-        # drop3 = pd.read_parquet(
-        #     os.path.join(save_dir, 'clustering_drop_bkgd_artifacts.parquet')
-        # )
-        # # drop3 = pd.read_parquet(
-        # #     '/Volumes/T7 Shield/cylinter_input/taja/cylinter/output(FINAL_CLASS_FILTERED_CORE_DROPPED_PHENOS)/checkpoints/clustering_drop_bkgd_artifacts.parquet'
-        # # )
-        # all_indices = np.arange(X.shape[0])
-        # indices_to_keep = np.setdiff1d(all_indices, drop3.index)
-        # X = X[indices_to_keep]
-
-        # # slicing can change the original chunk size, ensure equivalent chunk sizes between
-        # # filtered X and sample_labels in da.map_blocks by
-        # # explicitly rechunking axis0 (number of cells)
-        # X = X.rechunk({0: chunk0})
-        # # X_seg = X_seg[indices_to_keep].rechunk({0: chunk0})
-
-        ############################################################
-        
         if not config.cluster_full_dataset:
             
             idxs = rng.choice(X.shape[0], size=config.clustering_sample_size, replace=False)
@@ -1189,7 +1091,8 @@ def ENCODE_IMAGES(config):
 
         X_transform = da.map_blocks(
             remove_background, X, sample_labels, bkgd_limits, 
-            dtype=np.float32  # dtype required to avoid ValueError: dtype inference failed in map_blocks
+            dtype=np.float32  
+            # dtype required to avoid ValueError: dtype inference failed in map_blocks
         )
 
         if config.masked_model:
@@ -1209,17 +1112,6 @@ def ENCODE_IMAGES(config):
             X_encoded = np.load(
                 os.path.join(save_dir, f'encodings_{num_cells}.npy')
             )
-
-            # temp = pd.DataFrame(X_encoded)
-            # temp.columns = [f'vae_{i}' for i in temp.columns]
-            # x_encoded_df = pd.concat(
-            #     [y['CellID'].reset_index(drop=True), pd.DataFrame(temp)], axis=1)
-            # x_encoded_df.to_csv(
-            #     os.path.join(
-            #         save_dir, 
-            #         f'encodings_{num_cells}.csv'), 
-            #     index=False
-            # )
 
         except (FileNotFoundError):
             print('Encoding images...')
@@ -1359,8 +1251,6 @@ def ENCODE_IMAGES(config):
             labels_list['leiden'] = leiden_clusters['Cluster']
         
         except FileNotFoundError:
-            print('No Leiden clustering file found.')
-            print()
             pass
 
         for name, labels in labels_list.items():
@@ -1389,10 +1279,10 @@ def ENCODE_IMAGES(config):
             chunk_size=chunk_size, intensity_multiplier=1.3
         )
 
-        # plot latent vectors represented as their learned representations
+        # plot latent vectors as their learned reconstructions
         PlotLatentSpace(
             reconstructions=True,
-            zoom=0.5,
+            zoom=2.5,
             X_encoded_embedded=X_encoded_embedded,
             X_decoded_reversed=X_decoded_reversed,
             y=None,
@@ -1408,8 +1298,8 @@ def ENCODE_IMAGES(config):
             LassoVectors(
                 contrast_limits=contrast_limits,
                 patch_dims=patch_dims,
-                imgs_instead_of_points=True,
-                zoom=0.5,
+                imgs_instead_of_points=False,
+                zoom=2.5,
                 X=X,
                 X_seg=X_seg,
                 X_encoded=X_encoded,
@@ -1449,7 +1339,8 @@ def ENCODE_IMAGES(config):
          y_outliers,
          X_outliers_seg,
          X_decoded_reversed_outliers,
-         outlier_idxs) = mse(
+         outlier_idxs,
+         X_decoded_reversed_outliers) = mse(
             patch_dims=patch_dims,
             X_transform=X_transform,
             y=labels_list['sample'],
@@ -1479,7 +1370,7 @@ def ENCODE_IMAGES(config):
         )
 
         ###########################################################################
-        # display learned reconstructions of input image patches
+        # display interpolation grid of learned reconstructions
         
         if config.latent_dimension == 2:
             InterpolationGrid(

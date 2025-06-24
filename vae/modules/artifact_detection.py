@@ -161,7 +161,7 @@ class ChannelPreprocessing():
         tile_max, tile_min = img_tile.max(), img_tile.min()
         img_tile = (
             (img_tile - tile_min) / (tile_max - tile_min)
-            ).astype('float16')
+        ).astype('float16')
         print(img_tile.shape)
 
         return {'image': img_tile}
@@ -172,7 +172,7 @@ def load_AAD_model(model_path):
     This function loads a previously saved AAD model. Since the original model
     class is defined in __main__ module we need to temporarily assign the
     model class defined here (class ArtifactSegmentationModel) to the main
-    # module of the morphaeus pipeline to get acces to the saved model. 
+    module of the morphaeus pipeline to get access to the saved model. 
     We then revert back to the __main__ module initialized by the pipeline.
     """
 
@@ -223,176 +223,176 @@ def stitch_tiles(tiles, num_x, num_y, tile_size):
         for j in range(num_y):
             full_image[i * tile_size: (i + 1) * tile_size, 
                        j * tile_size: (j + 1) * tile_size] = (
-                        tiles_reshaped[i, j]
-                        )
+                tiles_reshaped[i, j]
+            )
     return full_image
 
 
 def DETECT_ARTIFACTS(config):
 
-    if not os.path.isfile(
-      os.path.join(config.output_path,
-                   'checkpoints/DETECT_ARTIFACTS.txt')):
+    if config.AAD:
 
-        print()
-        #######################################################################
-        # I/O
-
-        aad_window_size = 2048
-
-        # Use config.yml parameter for model path or fall back to a default
-        model_path = getattr(
-            config, 'AAD_model_path',  # AAD_model_path is config param name 
-            '/Volumes/SysBio/SORGER PROJECTS/people/Greg_Baker/AAD/'
-            'CyLinter_DL_artifact_detection/model.ckpt'
-        )
-        model = load_AAD_model(model_path)
-        
-        save_dir = os.path.join(
-            config.output_path, '2_artifact_detection'
-        )
-        if not os.path.exists(save_dir):
-            os.makedirs(save_dir)
-        
-        #######################################################################
-        # Crop 2048 x 2048 multi-channel tiles from sample TIFFs (tile size 
-        # must match those used during AAD model training).
-        
-        markers = pd.read_csv(config.markers_path)
-
-        # Get the channel numbers for markers in config.tif_channels
-        marker_channel_numbers = []
-        for i in config.tif_channels:
-            id = markers['channel_number'][
-                markers['marker_name'] == i].values[0]
-            marker_channel_numbers.append(str(id))
-        
-        # Add checkpoint tracking file
-        checkpoint_file = os.path.join(save_dir, 'processed_samples.txt')
-        processed_samples = set()
-        if os.path.exists(checkpoint_file):
-            with open(checkpoint_file, 'r') as f:
-                for line in f:
-                    if line.endswith('_tiles\n'):
-                        processed_samples.add(line.strip())
-
-        # Read the cellcutter input csv file
-        csv_path = config.csv_path
-        csv = pd.read_parquet(csv_path)
-        csv['Sample'] = csv['Sample'].astype(str)
-
-        # Loop through each sample in the csv file
-        for sample, group in csv.groupby('Sample'):
-
-            # Run cellcutter if sample was not already processed for patches
-            checkpoint_key_tiles = f'{sample}_tiles'
-            
-            if checkpoint_key_tiles not in processed_samples:
-
-                logger.info(f'Cutting data for sample {sample}...')
-                print()  
-
-                # Check pixel size of image (might want to move this elsewhere)
-                ome = ome_types.from_tiff(
-                    os.path.join(config.tif_path, f'{sample}.ome.tif')
-                )
-                pixel_size_microns = (
-                    ome.images[0].pixels.physical_size_x_quantity.to('micron')
-                )
-                logger.info('Physical pixel size =', pixel_size_microns)
-                print()      
-
-                # Run cellcutter to generate image patches
-                run(
-                    ["cut_tiles", "-z", "-f",
-                     "--tiles-per-chunk", "10",
-                     "--cache-size", "30000", "--save-metadata", 
-                     os.path.join(
-                        save_dir,
-                        f"{sample}_meta_{aad_window_size}.csv"),
-                     str(os.path.join(
-                        config.tif_path, f"{sample}.ome.tif" if 
-                        os.path.exists(
-                            os.path.join(config.tif_path,
-                                         f"{sample}.ome.tif"))
-                        else f"{sample}.tif"
-                     )),
-                     str(aad_window_size), 
-                     os.path.join(
-                        save_dir, 
-                        f"{sample}_tiles_{aad_window_size}.zip"),
-                     "--channels",  
-                     ] + marker_channel_numbers
-                )
-
+        if not os.path.isfile(
+           os.path.join(config.output_path,
+                        'checkpoints/DETECT_ARTIFACTS.txt')):
             print()
-            
-            ###################################################################
-            # run AAD model on channel-specific image tiles (2048 x 2048) 
-            
-            meta_path = os.path.join(
-                save_dir,
-                f"{sample}_meta_{aad_window_size}.csv"
+            #######################################################################
+            # I/O
+
+            aad_window_size = 2048
+
+            # Use config.yml parameter for model path or fall back to a default
+            model_path = getattr(
+                config, 'AAD_model_path',  # AAD_model_path is config param name 
+                '<A DEFAULT MODEL PATH HERE>'
             )
-            meta = pd.read_csv(meta_path)
+            model = load_AAD_model(model_path)
             
-            zarr_path = os.path.join(
-                save_dir, f"{sample}_tiles_{aad_window_size}.zip"
+            save_dir = os.path.join(
+                config.output_path, '2_artifact_detection'
             )
-            store = zarr.ZipStore(zarr_path)
-            z = zarr.open(store=store, mode='r')
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
             
-            rows = meta['Y_start'].nunique()
-            cols = meta['X_start'].nunique()
+            #######################################################################
+            # Crop 2048 x 2048 multi-channel tiles from sample TIFFs
+            # (tile size must match those used during AAD model training).
             
-            # Initialize mask to append channel artifact predictions
-            mask = np.zeros(shape=(2048*rows, 2048*cols), dtype=np.uint8)
+            markers = pd.read_csv(config.markers_path)
+
+            # Get the channel numbers for markers in config.tif_channels
+            marker_channel_numbers = []
+            for i in config.tif_channels:
+                id = markers['channel_number'][
+                    markers['marker_name'] == i].values[0]
+                marker_channel_numbers.append(str(id))
             
-            for e, ch in enumerate(config.tif_channels):
-                if ch in config.tif_channels:  # Allowing for debugging
-                    logger.info(
-                        f'Predicting artifacts in {ch} '
-                        f'channel of sample {sample}'
+            # Add checkpoint tracking file
+            checkpoint_file = os.path.join(save_dir, 'processed_samples.txt')
+            processed_samples = set()
+            if os.path.exists(checkpoint_file):
+                with open(checkpoint_file, 'r') as f:
+                    for line in f:
+                        if line.endswith('_tiles\n'):
+                            processed_samples.add(line.strip())
+
+            # Read the cellcutter input csv file
+            csv_path = config.csv_path
+            csv = pd.read_parquet(csv_path)
+            csv['Sample'] = csv['Sample'].astype(str)
+
+            # Loop through each sample in the csv file
+            for sample, group in csv.groupby('Sample'):
+
+                # Run cellcutter if sample was not already processed for patches
+                checkpoint_key_tiles = f'{sample}_tiles'
+
+                if checkpoint_key_tiles not in processed_samples:
+
+                    logger.info(f'Cutting data for sample {sample}...')
+                    print()  
+
+                    # Check pixel size of image (might want to move this elsewhere)
+                    ome = ome_types.from_tiff(
+                        os.path.join(config.tif_path, f'{sample}.ome.tif')
                     )
-         
-                    tiles = ChannelPreprocessing(z, channel=e)
-                    
-                    tiles_loader = DataLoader(
-                        tiles, batch_size=16, shuffle=False, num_workers=4
+                    pixel_size_microns = (
+                        ome.images[0].pixels.physical_size_x_quantity.to('micron')
                     )
-                    
-                    pr_masks = []
-                    for batch_idx, batch in tqdm(enumerate(iter(tiles_loader))):
-                        with torch.no_grad():
-                            model.eval()
-                            logits = model(batch["image"])
-                        pr_mask = logits.sigmoid()
-                        pr_masks.append(pr_mask)
+                    logger.info(f'Physical pixel size = {pixel_size_microns}')
+                    print()      
 
-                    pr_stitched = stitch_tiles(
-                        torch.cat(pr_masks, dim=0).squeeze(), cols, rows, 2048
-                    ).astype(np.uint8)
-
-                    # Visualize artifact predictions on channel image
-                    fig, ax = plt.subplots(figsize=(7, 7))
-                    img_stitched = stitch_tiles(z[e], cols, rows, 2048)
-                    ax.imshow(img_stitched)
-                    ax.imshow(pr_stitched, alpha=0.5)
-                    fig.savefig(
-                        os.path.join(save_dir, f'{sample}_{ch}.png')
+                    # Run cellcutter to generate image patches
+                    run(
+                        ["cut_tiles", "-z", "-f",
+                         "--tiles-per-chunk", str(config.tiles_per_chunk),
+                         "--cache-size", str(config.cache_size_cellcutter), "--save-metadata", 
+                         os.path.join(
+                                      save_dir,
+                                      f"{sample}_meta_{aad_window_size}.csv"),
+                         str(os.path.join(
+                             config.tif_path, f"{sample}.ome.tif" if 
+                             os.path.exists(
+                                 os.path.join(config.tif_path,
+                                              f"{sample}.ome.tif"))
+                             else f"{sample}.tif"
+                         )),
+                         str(aad_window_size), 
+                         os.path.join(
+                             save_dir, 
+                             f"{sample}_tiles_{aad_window_size}.zip"),
+                         "--channels",  
+                         ] + marker_channel_numbers
                     )
-                    plt.close(fig)
 
-                    mask += pr_stitched
+                print()
+                
+                ###################################################################
+                # run AAD model on channel-specific image tiles (2048 x 2048) 
 
-                    print()
+                meta_path = os.path.join(
+                    save_dir,
+                    f"{sample}_meta_{aad_window_size}.csv"
+                )
+                meta = pd.read_csv(meta_path)
+                
+                zarr_path = os.path.join(
+                    save_dir, f"{sample}_tiles_{aad_window_size}.zip"
+                )
+                store = zarr.ZipStore(zarr_path)
+                z = zarr.open(store=store, mode='r')
+                
+                rows = meta['Y_start'].nunique()
+                cols = meta['X_start'].nunique()
+                
+                # Initialize mask to append channel artifact predictions
+                mask = np.zeros(shape=(2048 * rows, 2048 * cols), dtype=np.uint8)
+                
+                for e, ch in enumerate(config.tif_channels):
+                    if ch in config.tif_channels:  # Allowing for debugging
+                        logger.info(
+                            f'Predicting artifacts in {ch} '
+                            f'channel of sample {sample}'
+                        )
+             
+                        tiles = ChannelPreprocessing(z, channel=e)
+                        
+                        tiles_loader = DataLoader(
+                            tiles, batch_size=16, shuffle=False, num_workers=4
+                        )
+                        
+                        pr_masks = []
+                        for batch_idx, batch in tqdm(enumerate(iter(tiles_loader))):
+                            with torch.no_grad():
+                                model.eval()
+                                logits = model(batch["image"])
+                            pr_mask = logits.sigmoid()
+                            pr_masks.append(pr_mask)
 
-            imwrite(
-                os.path.join(save_dir, f'{sample}_mask_{aad_window_size}.tif'),
-                mask, tile=(aad_window_size, aad_window_size), compression='zlib'
-            )
+                        pr_stitched = stitch_tiles(
+                            torch.cat(pr_masks, dim=0).squeeze(), cols, rows, 2048
+                        ).astype(np.uint8)
 
-            # After successful path processing, add to checkpoint file
-            with open(checkpoint_file, 'a') as f:
-                f.write(f'{checkpoint_key_tiles}\n')
-            processed_samples.add(checkpoint_key_tiles)
+                        # Visualize artifact predictions on channel image
+                        fig, ax = plt.subplots(figsize=(7, 7))
+                        img_stitched = stitch_tiles(z[e], cols, rows, 2048)
+                        ax.imshow(img_stitched)
+                        ax.imshow(pr_stitched, alpha=0.5)
+                        fig.savefig(
+                            os.path.join(save_dir, f'{sample}_{ch}.png')
+                        )
+                        plt.close(fig)
+
+                        mask += pr_stitched
+
+                        print()
+
+                imwrite(
+                    os.path.join(save_dir, f'{sample}_mask_{aad_window_size}.tif'),
+                    mask, tile=(aad_window_size, aad_window_size), compression='zlib'
+                )
+
+                # After successful path processing, add to checkpoint file
+                with open(checkpoint_file, 'a') as f:
+                    f.write(f'{checkpoint_key_tiles}\n')
+                processed_samples.add(checkpoint_key_tiles)
