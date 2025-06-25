@@ -225,37 +225,22 @@ def DecodeVectors(decoder, X_encoded, X, X_seg, sample_labels, bkgd_limits, cont
         dtype=np.float32  
         # dtype parameter required to avoid ValueError: dtype inference failed in map_blocks
     )  # Call .compute() to debug
-    
+
     # Slice out channels to visualize
     channel_indices = np.array([tif_channels.index(i) for i in channel_color_dict.keys()])
     X_decoded_reversed = X_decoded_reversed[:, :, :, channel_indices]
-    
+
     # Convert to RGB, brighten, and colorize
     X_decoded_reversed = gray2rgb(X_decoded_reversed)
     X_decoded_reversed *= intensity_multiplier
     color_arr = np.array(
         [to_rgb(color) for _, color in channel_color_dict.items()]
-    ).reshape(1, 1, 1, -1, 3)
+    ).reshape(1, 1, -1, 3)
     X_decoded_reversed *= color_arr
 
-    # Add segmentation outlines layer
-    X_seg = img_as_float(X_seg)
-    seg_slices_rgb = gray2rgb(X_seg) * 0.25  # decrease alpha
-    X_decoded_reversed = np.concatenate((X_decoded_reversed, seg_slices_rgb), axis=3)
-
-    # Add centroid layer
-    centroid_layer = np.zeros(
-        (X_decoded_reversed.shape[0], X_decoded_reversed.shape[1],
-         X_decoded_reversed.shape[2], 1, 3)
-    )
-    centroid_layer[
-        :, int(X_decoded_reversed.shape[1] / 2),
-        int(X_decoded_reversed.shape[2] / 2), 0, :
-    ] = 1
-    X_decoded_reversed = np.concatenate((X_decoded_reversed, centroid_layer), axis=3)
-    
-    # Sum images along channels axis to generate final RGB image patches
+    # Sum images along channels axis to generate final RGB image patch
     X_decoded_reversed = np.sum(X_decoded_reversed, axis=3)
+    X_decoded_reversed = np.clip(X_decoded_reversed, 0, 1)
 
     # Rechunk reverse processed image patches
     X_decoded_reversed = da.rechunk(
@@ -466,16 +451,32 @@ def LassoVectors(contrast_limits, patch_dims, imgs_instead_of_points, zoom, X, X
             ax.spines['bottom'].set_visible(False)
             ax.spines['left'].set_visible(False)
 
+            # Segmentation outlines layer
+            seg_layer = X_seg[e][:, :, 0]
+            seg_layer = img_as_float(seg_layer)
+            seg_rgb = np.zeros((seg_layer.shape[0], seg_layer.shape[1], 4))  # RGBA
+            seg_rgb[..., :3] = [1, 1, 1]  # color the full RGB array white
+            seg_rgb[..., 3] = seg_layer  # only show values >0
+
+            # Centroid marker layer
+            patch_height, patch_width = (X[0].shape[0], X[0].shape[0])
+            centroid_layer = np.zeros((patch_height, patch_width, 4))  # RGBA
+            cy, cx = int(patch_height / 2), int(patch_width / 2)
+            centroid_layer[cy, cx, :3] = [1, 1, 1]  # color the full RGB array white
+            centroid_layer[cy, cx, 3] = 1  # only show the centroid value (>0) 
+
             if panel == 0:
 
+                # Slice image patch from Zarr
                 input_img = X[e]
 
-                # Apply image contrast settings to reverse-transformed channel slice
+                # Apply image contrast settings
                 lower = np.array(
-                    [i[0] for i in contrast_limits.values()]).reshape(1, 1, input_img.shape[2])
+                    [i[0] for i in contrast_limits.values()]
+                ).reshape(1, 1, input_img.shape[2])
                 upper = np.array(
-                    [i[1] for i in contrast_limits.values()]).reshape(1, 1, input_img.shape[2])
-
+                    [i[1] for i in contrast_limits.values()]
+                ).reshape(1, 1, input_img.shape[2])
                 input_img = (input_img - lower) / (upper - lower)
 
                 # Slice out channels to visualize
@@ -492,33 +493,18 @@ def LassoVectors(contrast_limits, patch_dims, imgs_instead_of_points, zoom, X, X
                 ).reshape(1, 1, -1, 3)
                 input_img *= color_arr
 
-                # Add segmentation outlines layer
-                seg_layer = X_seg[e]
-                seg_layer = img_as_float(seg_layer)
-                seg_layer = gray2rgb(seg_layer) * 0.25  # decrease alpha
-                input_img = np.concatenate((input_img, seg_layer), axis=2)
-
-                # Add centroid layer
-                centroid_layer = np.zeros(
-                    (input_img.shape[0], input_img.shape[1], 1, 3)
-                )
-                centroid_layer[
-                    int(input_img.shape[0] / 2),
-                    int(input_img.shape[1] / 2), 0, :
-                ] = 1
-                input_img = np.concatenate((input_img, centroid_layer), axis=2)
-    
-                # Sum images along channels axis to generate final RGB image patches
+                # Sum images along channels axis to generate final RGB image patch
                 overlay = np.sum(input_img, axis=2)
+                overlay = np.clip(overlay, 0, 1)
 
             elif panel == 1:
 
+                # RGB overlay for learned reconstructions are generated in DecodeVectors() 
                 overlay = X_decoded_reversed[e]
 
-            # Clip values to 0-1 range (avoids matplotlib clipping warning)
-            overlay = np.clip(overlay, 0, 1)
-            
             ax.imshow(overlay)
+            ax.imshow(seg_rgb, alpha=0.4)
+            ax.imshow(centroid_layer)
 
             # ax.set_xlabel(label['label'], fontsize=patch_font_size, labelpad=0.75)
             fig.add_subplot(ax)
@@ -586,16 +572,32 @@ def PlotReconstructedImages(patch_dims, X, y, X_seg, X_decoded_reversed, contras
             ax.spines['bottom'].set_visible(False)
             ax.spines['left'].set_visible(False)
 
+            # Segmentation outlines layer
+            seg_layer = X_seg[e][:, :, 0]
+            seg_layer = img_as_float(seg_layer)
+            seg_rgb = np.zeros((seg_layer.shape[0], seg_layer.shape[1], 4))  # RGBA
+            seg_rgb[..., :3] = [1, 1, 1]  # color the full RGB array white
+            seg_rgb[..., 3] = seg_layer  # only show values >0
+
+            # Centroid marker layer
+            patch_height, patch_width = (X[0].shape[0], X[0].shape[0])
+            centroid_layer = np.zeros((patch_height, patch_width, 4))  # RGBA
+            cy, cx = int(patch_height / 2), int(patch_width / 2)
+            centroid_layer[cy, cx, :3] = [1, 1, 1]  # color the full RGB array white
+            centroid_layer[cy, cx, 3] = 1  # only show the centroid value (>0) 
+
             if panel == 0:
 
+                # Slice image patch from Zarr
                 input_img = X[e]
 
-                # apply image contrast settings
+                # Apply image contrast settings
                 lower = np.array(
-                    [i[0] for i in contrast_limits.values()]).reshape(1, 1, input_img.shape[2])
+                    [i[0] for i in contrast_limits.values()]
+                ).reshape(1, 1, input_img.shape[2])
                 upper = np.array(
-                    [i[1] for i in contrast_limits.values()]).reshape(1, 1, input_img.shape[2])
-
+                    [i[1] for i in contrast_limits.values()]
+                ).reshape(1, 1, input_img.shape[2])
                 input_img = (input_img - lower) / (upper - lower)
 
                 # Slice out channels to visualize
@@ -612,33 +614,18 @@ def PlotReconstructedImages(patch_dims, X, y, X_seg, X_decoded_reversed, contras
                 ).reshape(1, 1, -1, 3)
                 input_img *= color_arr
 
-                # Add segmentation outlines layer
-                seg_layer = X_seg[e]
-                seg_layer = img_as_float(seg_layer)
-                seg_layer = gray2rgb(seg_layer) * 0.25  # decrease alpha
-                input_img = np.concatenate((input_img, seg_layer), axis=2)
-
-                # Add centroid layer
-                centroid_layer = np.zeros(
-                    (input_img.shape[0], input_img.shape[1], 1, 3)
-                )
-                centroid_layer[
-                    int(input_img.shape[0] / 2),
-                    int(input_img.shape[1] / 2), 0, :
-                ] = 1
-                input_img = np.concatenate((input_img, centroid_layer), axis=2)
-    
-                # Sum images along channels axis to generate final RGB image patches
+                # Sum images along channels axis to generate final RGB image patch
                 overlay = np.sum(input_img, axis=2)
+                overlay = np.clip(overlay, 0, 1)
 
             elif panel == 1:
 
+                # RGB overlay for learned reconstructions are generated in DecodeVectors() 
                 overlay = X_decoded_reversed[e]
 
-            # Clip values to 0-1 range (avoids matplotlib clipping warning)
-            overlay = np.clip(overlay, 0, 1)
-            
             ax.imshow(overlay)
+            ax.imshow(seg_rgb, alpha=0.4)
+            ax.imshow(centroid_layer)
 
             # ax.set_xlabel(label['label'], fontsize=patch_font_size, labelpad=0.75)
             fig.add_subplot(ax)
@@ -1300,7 +1287,6 @@ def ENCODE_IMAGES(config):
 
         # Get input and output images of lassoed latent vectors for targeted analysis of vectors 
         if config.lasso_vector_tool:
-
             LassoVectors(
                 contrast_limits=contrast_limits,
                 patch_dims=patch_dims,

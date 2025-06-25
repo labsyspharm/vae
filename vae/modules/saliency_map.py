@@ -717,8 +717,8 @@ def SALIENCY_MAP(config):
                         # Mask function is designed to be applied to all 
                         # cells in a batch during model training. Slicing first 
                         # dimension in this case to apply to a single patch.
-                        # img /= mask[0, :, :, :]
-                        pass
+                        img /= mask[0, :, :, :]
+                        # pass
                     
                     # Visualize attributions
                     fig = plt.figure(figsize=(13, 4.5))
@@ -758,6 +758,9 @@ def SALIENCY_MAP(config):
                                 
                         # Fluorescence image
                         ax1 = fig.add_subplot(inner_gs[0])
+
+                        overlay = np.clip(overlay, 0, 1)
+                        
                         ax1.imshow(overlay)
                         ax1.set_title(
                             f'{antibody_abbrs[channel_name]}',
@@ -827,6 +830,9 @@ def SALIENCY_MAP(config):
                                         pass
 
                             ax3 = fig.add_subplot(last_gs[1])
+
+                            merge = np.clip(merge, 0, 1)
+                            
                             ax3.imshow(merge)
                             ax3.set_title(
                                 'Merge', fontsize=7, 
