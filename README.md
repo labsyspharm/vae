@@ -6,19 +6,16 @@
 MORPHӔUS is Python-based software for morphology-aware classification of individual cells and multicellular tissue structures in whole-slide multiplex images of tissue using the variational autoencoder deep learning network architecture.
 
 ## Installation
-If not already installed, download `conda` following the instructions provided [here](https://docs.anaconda.com/miniconda/). Then add the `labsyspharm` channel to your conda installation:
-```bash
-conda config --add channels labsyspharm
-```
+If not already installed, download `conda` following the instructions provided [here](https://docs.anaconda.com/miniconda/).
 
 Next, install MORPHӔUS into a dedicated Conda environment and activate it with the following commands:
 ```bash
-conda create -n morphaeus -c conda-forge -c labsyspharm python=3.11 vae
+conda create -n morphaeus -c conda-forge -c labsyspharm python=3 vae
 conda activate morphaeus
 ```
 
 ## Program Execution
-Find the `config.yml` file in the `vae` folder of the installed MORPHӔUS Conda environment and modify all applicable paths and configuration settings. Then run the program with the following command:
+Find the `config.yml` file in the `vae` folder of the installed MORPHӔUS Conda environment and modify all applicable paths and configuration settings. Run the program with the following command:
 ```bash
 vae <path/to/config.yml>
 ```
@@ -27,13 +24,15 @@ The pipeline supports progress bookmarking, which allows the program to pick up 
 ```bash
 vae --module <MODULE_NAME> <path/to/config.yml>
 ```
-Currently available modules:
+Available modules:
 - `GENERATE_CELLCUTTER_INPUT`
+- `DETECT_ARTIFACTS` (under development)
 - `RUN_CELLCUTTER`
 - `GENERATE_IMAGE_GALLERY`
 - `REMOVE_BACKGROUND`
 - `TRAIN_VAE`
 - `ENCODE_IMAGES`
+- `SALIENCY_MAP`
 
 ## MORPHӔUS Source Code
 
