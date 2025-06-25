@@ -40,65 +40,61 @@ def PlotInputImgs(numExamples, numColumns, imgs, seg, intensity_multiplier, labe
         plt.xticks([])
         plt.yticks([])
         plt.grid(False)
-       
-        # Initialize array of zeros with same shape as image patch
-        overlay = np.zeros((imgs.shape[2], imgs.shape[3]))
 
-        # Add centroid point at the center of the patch
-        overlay[
-            int(imgs.shape[2] / 2):int(imgs.shape[2] / 2) + 1,
-            int(imgs.shape[3] / 2):int(imgs.shape[3] / 2) + 1
-        ] = 1
-        
-        overlay = gray2rgb(overlay)
+        # Slice image patch from Zarr
+        input_img = imgs[:, row, :, :]
+
+        # Apply image contrast settings
+        lower = np.array(
+            [i[0] for i in contrast_limits.values()]
+        ).reshape(input_img.shape[0], 1, 1)
+        upper = np.array(
+            [i[1] for i in contrast_limits.values()]
+        ).reshape(input_img.shape[0], 1, 1)
+        input_img = (input_img - lower) / (upper - lower)
+
+        # Slice out channels to visualize
+        channel_indices = np.array(
+            [tif_channels.index(i) for i in channel_color_dict.keys()]
+        )
+        input_img = input_img[channel_indices, :, :]
+
+        # Segmentation outlines layer
+        seg_layer = seg[0, row, :, :]
+        seg_layer = img_as_float(seg_layer)
+        seg_rgb = np.zeros((seg_layer.shape[0], seg_layer.shape[1], 4))  # RGBA
+        seg_rgb[..., :3] = [1, 1, 1]  # color the full RGB array white
+        seg_rgb[..., 3] = seg_layer  # only show values >0
+
+        # Centroid marker layer
+        patch_height, patch_width = (imgs.shape[2], imgs.shape[3])
+        centroid_layer = np.zeros((patch_height, patch_width, 4))  # RGBA
+        cy, cx = int(patch_height / 2), int(patch_width / 2)
+        centroid_layer[cy, cx, :3] = [1, 1, 1]  # color the full RGB array white
+        centroid_layer[cy, cx, 3] = 1  # only show the centroid value (>0)
+
+        # Convert to RGB, brighten, and colorize
+        input_img = gray2rgb(input_img)
+        input_img *= intensity_multiplier
+        color_arr = np.array(
+            [to_rgb(color) for _, color in channel_color_dict.items()]
+        ).reshape(-1, 1, 1, 3)
+        input_img *= color_arr
+
+        # Sum images along channels axis to generate final RGB image patch
+        overlay = np.sum(input_img, axis=0)
+        overlay = np.clip(overlay, 0, 1)
         
         for name, color in channel_color_dict.items():
-            
-            ch = tif_channels.index(name)
-            lyr = imgs[ch, row, :, :]
-
-            # lyr = lyr.astype('float')  # use for binary patches
-            
-            lyr = img_as_float(lyr)
-
-            # Apply image contrast settings
-            if str(imgs.dtype) == 'uint16':
-                divisor = 65535
-            elif str(imgs.dtype) == 'uint8':
-                divisor = 255
-            else:
-                raise ValueError(f'Unsupported image dtype: {imgs.dtype}')
-
-            lyr -= (contrast_limits[name][0] / divisor)
-            lyr /= (
-                (contrast_limits[name][1] / divisor) - 
-                (contrast_limits[name][0] / divisor))
-
-            lyr = np.clip(lyr, 0, 1)
-
-            lyr = gray2rgb(lyr)
-
-            lyr = lyr * intensity_multiplier
-            lyr = lyr * to_rgb(color)
-            overlay += lyr
 
             custom_lines.append(Line2D([0], [0], color=color, lw=5))
-
-        # Select segmentation outlines slice
-        seg_slice = seg[0, row, :, :]
-
-        # Ensure segmentation outlines are normalized 0-1
-        seg_slice = (seg_slice - np.min(seg_slice)) / np.ptp(seg_slice)
-
-        # Convert segmentation slice to RGB
-        seg_slice = gray2rgb(seg_slice) * 0.25  # decrease alpha
-
-        overlay += seg_slice
 
         label = data[cluster_column]
         
         overlay = np.clip(overlay, 0, 1)
         plt.imshow(overlay, cmap=plt.cm.binary)
+        plt.imshow(seg_rgb, alpha=0.4)
+        plt.imshow(centroid_layer)
         plt.xlabel(label, size=fontSize, labelpad=1.5)
 
     legend_elements = []
@@ -156,6 +152,9 @@ def GENERATE_IMAGE_GALLERY(config):
 
         # Contrast settings
         contrast_limits = yaml.safe_load(open(config.contrast_path))
+
+        # Ensure keys in config.tif_channel order
+        contrast_limits = {k: contrast_limits[k] for k in config.tif_channels} 
 
         # Pull random patches from training data to check quality
         patch_ids = np.random.RandomState(1).choice(
