@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 def flatten_and_log_transform(channel_patches, threshold, max_pixels):
     total_pixels = channel_patches.size
     
-    # flatten image patches for raveling efficiency
+    # Flatten image patches for raveling efficiency
     data = channel_patches.reshape(
         -1, np.prod(channel_patches.shape[1:])
     ) 

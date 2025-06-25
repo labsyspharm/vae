@@ -32,7 +32,7 @@ def GENERATE_CELLCUTTER_INPUT(config):
             raise ValueError(f'Note: extension type {extension} not supported.')
 
         #######################################################################
-        # weighted random sampling, etc.
+        # weighted random sampling
         
         # # drop noisy cells from HDBSCAN clustering
         # csv = csv[csv['cluster_3d'] != -1]
@@ -52,24 +52,12 @@ def GENERATE_CELLCUTTER_INPUT(config):
         #     weights=weights['weights'], random_state=0, axis=0
         # )
 
-        # # remove cells affected by artifacts missed during initial QC
-        # # these artifacts were identified by VAE clustering 
-        # # (cluster 27, 29, and 30 in 20x20um analysis)
-        
-        # # residual_artifact_cellids = main['CellID'][
-        # #     main['VAE20_ROT_res2.0'].isin([27, 29, 30])
-        # # ]
-        # residual_artifact_cellids = pd.read_csv(
-        #     '/Users/greg/projects/vae-paper/src/input/'
-        #     'residual_artifact_cellids.csv'
-        # )
-        # csv = csv[~csv['CellID'].isin(residual_artifact_cellids['CellID'])]
-
         # print()
         # print('Cells per cluster after cluster-weighted random sampling:')
         # print(csv.groupby('cluster_3d').size().sort_values(ascending=False))
 
         #######################################################################
+        
         print()
         logger.info(
             'Partitioning CyLinter dataframe into training, ' 
@@ -77,30 +65,30 @@ def GENERATE_CELLCUTTER_INPUT(config):
         )
         print()
         
-        # shuffle csv data
+        # Shuffle csv data
         csv = csv.sample(frac=config.percent_cells, random_state=0)
 
-        # reserve 10% of data for testing after model training 
+        # Reserve 10% of data for testing after model training 
         split = round(len(csv) * 0.10)
         test = csv[0:split].copy()
         test.sort_values(by=['Sample', 'CellID'], inplace=True)
         
-        # reserve 10% of data for validation at the end of each training epoch
+        # Reserve 10% of data for validation at the end of each training epoch
         validate = csv[split:split * 2].copy()
         validate.sort_values(by=['Sample', 'CellID'], inplace=True)
         
-        # use remaining data for model training
+        # Use remaining data for model training
         train = csv[split * 2:].copy()
         train.sort_values(by=['Sample', 'CellID'], inplace=True)
     
-        # reset row indexes of each dataframe
+        # Reset row indexes of each dataframe
         test.reset_index(drop=True, inplace=True)
         validate.reset_index(drop=True, inplace=True)
         train.reset_index(drop=True, inplace=True)
 
         #######################################################################
 
-        # save testing, validation, and training dataframes for cellcutter
+        # Save testing, validation, and training dataframes for cellcutter
         test.to_csv(os.path.join(save_dir, 'test_raw.csv'), index=False)
         validate.to_csv(os.path.join(save_dir, 'validate_raw.csv'), index=False)
         train.to_csv(os.path.join(save_dir, 'train_raw.csv'), index=False)

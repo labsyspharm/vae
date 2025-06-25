@@ -281,7 +281,7 @@ def DETECT_ARTIFACTS(config):
             csv = pd.read_parquet(csv_path)
             csv['Sample'] = csv['Sample'].astype(str)
 
-            # Loop through each sample in the csv file
+            # Loop through samples in the csv file
             for sample, group in csv.groupby('Sample'):
 
                 # Run cellcutter if sample was not already processed for patches

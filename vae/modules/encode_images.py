@@ -72,9 +72,8 @@ def categorical_cmap(numUniqueSamples, numCatagories, cmap='tab10', continuous=F
             cd['R'], cd['Cy'], cd['Br'], cd['Gr'], cd['Pi']
         ]
         ccolors = [ccolors[i] for i in myorder]
-        
-        # regular palette
-        # use Okabe and Ito color-safe palette for first 6 colors
+
+        # Okabe and Ito color-safe palette
         ccolors[0] = np.array([0.91, 0.29, 0.235])  # E84A3C
         ccolors[1] = np.array([0.18, 0.16, 0.15])  # 2E2926
         ccolors[0] = np.array([0.0, 0.447, 0.698, 1.0])  # blue
@@ -94,7 +93,7 @@ def categorical_cmap(numUniqueSamples, numCatagories, cmap='tab10', continuous=F
         cols[i * numSubcatagories:(i + 1) * numSubcatagories, :] = rgb
     cmap = colors.ListedColormap(cols)
 
-    # trim colors if necessary
+    # Trim colors if necessary
     if len(cmap.colors) > numUniqueSamples:
         trim = len(cmap.colors) - numUniqueSamples
         cmap_colors = cmap.colors[:-trim]
@@ -110,7 +109,7 @@ def ScatterReconstructions(X_decoded, X_encoded_embedded, zoom, ax):
         images = []
         for i in range(len(x)):
             x0, y0 = x[i], y[i]
-            # clip values to 0-1 range (avoids matplotlib clipping warning)
+            # Clip values to 0-1 range (avoids matplotlib clipping warning)
             img = np.clip(imageData[i], 0, 1)
             image = OffsetImage(img, zoom=zoom)
             ab = AnnotationBbox(
@@ -166,14 +165,15 @@ def PlotLatentSpace(reconstructions, zoom, X_encoded_embedded, X_decoded_reverse
         )
 
         if -1 in y.unique():
-            # make black the first color to specify
-            # cluster outliers (i.e. cluster -1 cells)
+            
+            # Make black the first color to specify
+            # HDBSCAN cluster outliers (i.e. cluster -1 cells)
             cmap = ListedColormap(
                 np.insert(
                     arr=cmap.colors, obj=0, values=[0.0, 0.0, 0.0], axis=0)
             )
 
-            # trim qualitative cmap to number of unique samples
+            # Trim qualitative cmap to the number of unique samples
             cmap = ListedColormap(cmap.colors[:-1])
 
         hue_dict = dict(
@@ -212,7 +212,7 @@ def PlotLatentSpace(reconstructions, zoom, X_encoded_embedded, X_decoded_reverse
 
 def DecodeVectors(decoder, X_encoded, X, X_seg, sample_labels, bkgd_limits, contrast_limits, channel_color_dict, tif_channels, patch_dims, mask, chunk_size, intensity_multiplier):
     
-    # decode latent vector
+    # Decode latent vector
     print('Decoding images...')
     X_decoded = decoder.predict(X_encoded, batch_size=200)
     X_decoded = da.from_array(
@@ -223,14 +223,14 @@ def DecodeVectors(decoder, X_encoded, X, X_seg, sample_labels, bkgd_limits, cont
         reverse_processing, X_decoded, X, sample_labels,
         bkgd_limits, contrast_limits, mask,
         dtype=np.float32  
-        # dtype required to avoid ValueError: dtype inference failed in map_blocks
-    )  # call .compute() to debug
+        # dtype parameter required to avoid ValueError: dtype inference failed in map_blocks
+    )  # Call .compute() to debug
     
-    # slice out channels to visualize
+    # Slice out channels to visualize
     channel_indices = np.array([tif_channels.index(i) for i in channel_color_dict.keys()])
     X_decoded_reversed = X_decoded_reversed[:, :, :, channel_indices]
     
-    # convert to RGB, brighten, and colorize
+    # Convert to RGB, brighten, and colorize
     X_decoded_reversed = gray2rgb(X_decoded_reversed)
     X_decoded_reversed *= intensity_multiplier
     color_arr = np.array(
@@ -238,12 +238,12 @@ def DecodeVectors(decoder, X_encoded, X, X_seg, sample_labels, bkgd_limits, cont
     ).reshape(1, 1, 1, -1, 3)
     X_decoded_reversed *= color_arr
 
-    # add segmentation outlines layer
+    # Add segmentation outlines layer
     X_seg = img_as_float(X_seg)
     seg_slices_rgb = gray2rgb(X_seg) * 0.25  # decrease alpha
     X_decoded_reversed = np.concatenate((X_decoded_reversed, seg_slices_rgb), axis=3)
 
-    # add centroid layer
+    # Add centroid layer
     centroid_layer = np.zeros(
         (X_decoded_reversed.shape[0], X_decoded_reversed.shape[1],
          X_decoded_reversed.shape[2], 1, 3)
@@ -254,10 +254,10 @@ def DecodeVectors(decoder, X_encoded, X, X_seg, sample_labels, bkgd_limits, cont
     ] = 1
     X_decoded_reversed = np.concatenate((X_decoded_reversed, centroid_layer), axis=3)
     
-    # sum images along channels axis to generate final RGB image patches
+    # Sum images along channels axis to generate final RGB image patches
     X_decoded_reversed = np.sum(X_decoded_reversed, axis=3)
 
-    # rechunk reverse processed image patches
+    # Rechunk reverse processed image patches
     X_decoded_reversed = da.rechunk(
         X_decoded_reversed, 
         chunks=(X_decoded_reversed.chunksize[0], 
@@ -360,14 +360,15 @@ def LassoVectors(contrast_limits, patch_dims, imgs_instead_of_points, zoom, X, X
         )
 
         if -1 in y.unique():
-            # make black the first color to specify
+            
+            # Make black the first color to specify
             # cluster outliers (i.e. cluster -1 cells)
             cmap = ListedColormap(
                 np.insert(
                     arr=cmap.colors, obj=0, values=[0.0, 0.0, 0.0], axis=0)
             )
 
-            # trim qualitative cmap to number of unique samples
+            # Trim qualitative cmap to number of unique samples
             cmap = ListedColormap(cmap.colors[:-1])
 
         hue_dict = dict(
@@ -421,17 +422,17 @@ def LassoVectors(contrast_limits, patch_dims, imgs_instead_of_points, zoom, X, X
     if len(selected_labels) > max_examples:
         selected_labels = selected_labels.sample(n=max_examples, random_state=44)
 
-    # sort selected labels
+    # Sort selected labels
     selected_labels.sort_values(by='label', inplace=True)
     # selected_labels.sort_index(inplace=True)  # sort by row index for efficient indexing
 
-    # isolated encodings and image patches associated with lasso selection
+    # Isolate encodings and image patches associated with lasso selection
     X_encoded = X_encoded[selected_labels.index]
     X = X[selected_labels.index]
     X_seg = X_seg[selected_labels.index]
     X_decoded_reversed = X_decoded_reversed[selected_labels.index]
 
-    # check cell images
+    # View image patches
     numSamples = len(selected_labels)
     numRows = math.ceil(numSamples / numColumns)
     grid_dims = (numRows, numColumns)
@@ -469,7 +470,7 @@ def LassoVectors(contrast_limits, patch_dims, imgs_instead_of_points, zoom, X, X
 
                 input_img = X[e]
 
-                # apply image contrast settings to reverse-transformed channel slice
+                # Apply image contrast settings to reverse-transformed channel slice
                 lower = np.array(
                     [i[0] for i in contrast_limits.values()]).reshape(1, 1, input_img.shape[2])
                 upper = np.array(
@@ -477,13 +478,13 @@ def LassoVectors(contrast_limits, patch_dims, imgs_instead_of_points, zoom, X, X
 
                 input_img = (input_img - lower) / (upper - lower)
 
-                # slice out channels to visualize
+                # Slice out channels to visualize
                 channel_indices = np.array(
                     [tif_channels.index(i) for i in channel_color_dict.keys()]
                 )
                 input_img = input_img[:, :, channel_indices]
 
-                # convert to RGB, brighten, and colorize
+                # Convert to RGB, brighten, and colorize
                 input_img = gray2rgb(input_img)
                 input_img *= intensity_multiplier
                 color_arr = np.array(
@@ -491,13 +492,13 @@ def LassoVectors(contrast_limits, patch_dims, imgs_instead_of_points, zoom, X, X
                 ).reshape(1, 1, -1, 3)
                 input_img *= color_arr
 
-                # add segmentation outlines layer
+                # Add segmentation outlines layer
                 seg_layer = X_seg[e]
                 seg_layer = img_as_float(seg_layer)
                 seg_layer = gray2rgb(seg_layer) * 0.25  # decrease alpha
                 input_img = np.concatenate((input_img, seg_layer), axis=2)
 
-                # # add centroid layer
+                # Add centroid layer
                 centroid_layer = np.zeros(
                     (input_img.shape[0], input_img.shape[1], 1, 3)
                 )
@@ -507,14 +508,14 @@ def LassoVectors(contrast_limits, patch_dims, imgs_instead_of_points, zoom, X, X
                 ] = 1
                 input_img = np.concatenate((input_img, centroid_layer), axis=2)
     
-                # sum images along channels axis to generate final RGB image patches
+                # Sum images along channels axis to generate final RGB image patches
                 overlay = np.sum(input_img, axis=2)
 
             elif panel == 1:
 
                 overlay = X_decoded_reversed[e]
 
-            # clip values to 0-1 range (avoids matplotlib clipping warning)
+            # Clip values to 0-1 range (avoids matplotlib clipping warning)
             overlay = np.clip(overlay, 0, 1)
             
             ax.imshow(overlay)
@@ -541,13 +542,13 @@ def PlotReconstructedImages(patch_dims, X, y, X_seg, X_decoded_reversed, contras
 
     selected_labels = pd.DataFrame(data={'label': y})
 
-    # sort selected labels
+    # Sort selected labels
     selected_labels.sort_values(by='label', inplace=True)
     # selected_labels.sort_index(inplace=True)  # sort by row index for efficient indexing
 
     selected_labels.reset_index(drop=True, inplace=True)
 
-    # isolated encodings and image patches associated with lasso selection
+    # Isolate encodings and image patches associated with lasso selection
     X = X[selected_labels.index]
     X_seg = X_seg[selected_labels.index]
     X_decoded_reversed = X_decoded_reversed[selected_labels.index]
@@ -597,13 +598,13 @@ def PlotReconstructedImages(patch_dims, X, y, X_seg, X_decoded_reversed, contras
 
                 input_img = (input_img - lower) / (upper - lower)
 
-                # slice out channels to visualize
+                # Slice out channels to visualize
                 channel_indices = np.array(
                     [tif_channels.index(i) for i in channel_color_dict.keys()]
                 )
                 input_img = input_img[:, :, channel_indices]
 
-                # convert to RGB, brighten, and colorize
+                # Convert to RGB, brighten, and colorize
                 input_img = gray2rgb(input_img)
                 input_img *= intensity_multiplier
                 color_arr = np.array(
@@ -611,13 +612,13 @@ def PlotReconstructedImages(patch_dims, X, y, X_seg, X_decoded_reversed, contras
                 ).reshape(1, 1, -1, 3)
                 input_img *= color_arr
 
-                # add segmentation outlines layer
+                # Add segmentation outlines layer
                 seg_layer = X_seg[e]
                 seg_layer = img_as_float(seg_layer)
                 seg_layer = gray2rgb(seg_layer) * 0.25  # decrease alpha
                 input_img = np.concatenate((input_img, seg_layer), axis=2)
 
-                # # add centroid layer
+                # Add centroid layer
                 centroid_layer = np.zeros(
                     (input_img.shape[0], input_img.shape[1], 1, 3)
                 )
@@ -627,14 +628,14 @@ def PlotReconstructedImages(patch_dims, X, y, X_seg, X_decoded_reversed, contras
                 ] = 1
                 input_img = np.concatenate((input_img, centroid_layer), axis=2)
     
-                # sum images along channels axis to generate final RGB image patches
+                # Sum images along channels axis to generate final RGB image patches
                 overlay = np.sum(input_img, axis=2)
 
             elif panel == 1:
 
                 overlay = X_decoded_reversed[e]
 
-            # clip values to 0-1 range (avoids matplotlib clipping warning)
+            # Clip values to 0-1 range (avoids matplotlib clipping warning)
             overlay = np.clip(overlay, 0, 1)
             
             ax.imshow(overlay)
@@ -693,23 +694,22 @@ def mse(patch_dims, X_transform, y, X_seg, X_decoded, X_decoded_reversed, mse_pe
             X_decoded_reversed, outlier_idxs, X_decoded_reversed_outliers)
 
 
-def InterpolationGrid(patch_dims, grid_size, X_encoded, y, decoder, label_color_dict, channel_color_dict, frac_of_scatter_points, scatter_point_size, make_sample_sizes_equal, img_brightness_multiplier, scatter_point_alpha, save_dir):
+def InterpolationGrid(patch_dims, grid_size, X_encoded, y, decoder, label_color_dict, channel_color_dict, frac_of_scatter_points, scatter_point_size, make_sample_sizes_equal, img_brightness_multiplier, scatter_point_alpha, tif_channels, save_dir):
 
-    # make lists to store grid coordinates and their indices
-    # for every latent space dimension
+    # Make lists to store grid coordinates and their indices for every latent space dimension
     grids = []
     indices = []
 
-    # grab dimensions in reverse order (e.g. 3, 2, 1, 0) with grids.reverse()
+    # Grab dimensions in reverse order (e.g. 3, 2, 1, 0) with grids.reverse()
     for d in range(2):
 
-        # round minimum latent variable in dimension 'd' down to 100th place
+        # Round minimum latent variable in dimension 'd' down to 100th place
         flr = math.floor(X_encoded[:, d].min() * 100.0) / 100.0
 
-        # round maximum latent variable in dimension 'd' up to 100th place
+        # Round maximum latent variable in dimension 'd' up to 100th place
         cel = math.ceil(X_encoded[:, d].max() * 100.0) / 100.0
 
-        # construct grid of latent dimension values and their grid indices
+        # Construct grid of latent dimension values and their grid indices
         grid = np.array(np.linspace(flr, cel, grid_size))
         grids.append(grid)
 
@@ -719,39 +719,41 @@ def InterpolationGrid(patch_dims, grid_size, X_encoded, y, decoder, label_color_
 
     grids.reverse()
 
-    # create an empty array that will fit the required number of
+    # Create an empty array that will fit the required number of
     # patches given the chosen grid size
     y_dim, x_dim, channels = (patch_dims[0], patch_dims[1], patch_dims[2])
     figure = np.zeros((y_dim * grid_size, x_dim * grid_size))
 
-    # convert to RGB
+    # Convert to RGB
     figure = gray2rgb(figure)
 
-    # sample the grid
+    # Sample the grid
     for grid_tup, dim_tup in zip(product(*grids), product(*indices)):
 
         grid_tup = list(grid_tup)
         grid_tup.reverse()
 
-        # get z sample at current grid spec
+        # Get z sample at current grid spec
         z_sample = np.array([grid_tup])
 
-        # decode z sample
+        # Decode z sample
         X_decoded = decoder.predict(z_sample)
 
-        # reconstruct image
+        # Reconstruct image
         reconstructed_img = X_decoded.reshape(
             y_dim, x_dim, channels)
 
-        # create blank image to append channels to
+        # Create blank image to append channels to
         overlay = np.zeros((reconstructed_img.shape[0], reconstructed_img.shape[1]))
 
-        # convert to RGB
+        # Convert to RGB
         overlay = gray2rgb(overlay)
 
-        # append chanenels
-        for name, (ch, color) in channel_color_dict.items():
+        # Append chanenels
+        for name, color in channel_color_dict.items():
 
+            ch = tif_channels.index(name)
+            
             channel = reconstructed_img[:, :, ch]
 
             channel = gray2rgb(channel)
@@ -773,10 +775,13 @@ def InterpolationGrid(patch_dims, grid_size, X_encoded, y, decoder, label_color_
     ax.set_yticks(list(range(y_dim, grid_size * y_dim + 1, y_dim)))
     ax.set_yticklabels(list(np.round(grids[0], 2)), size=8)
 
-    y = y.reset_index(drop=True)  # ensure y and X_encoded indices match
+    # Ensure y and X_encoded indices match
+    y = y.reset_index(drop=True)  
     y = y.sample(frac=frac_of_scatter_points)  # sample y
-    data = X_encoded[y.index]  # get corresponding X_encoded samples
-    y = y.reset_index(drop=True)  # reset y index to matche sampled X_encoded
+    # Get corresponding X_encoded samples
+    data = X_encoded[y.index]
+    # Reset y index to match sampled X_encoded
+    y = y.reset_index(drop=True)
 
     scatter_df = pd.concat([pd.DataFrame(y), pd.DataFrame(data)], axis=1)
 
@@ -799,7 +804,7 @@ def InterpolationGrid(patch_dims, grid_size, X_encoded, y, decoder, label_color_
     else:
         pass
 
-    # get global x and y ranges
+    # Get global x and y ranges
     global_x_min = scatter_df[0].min()
     global_x_max = scatter_df[0].max()
     global_y_min = scatter_df[1].min()
@@ -808,7 +813,7 @@ def InterpolationGrid(patch_dims, grid_size, X_encoded, y, decoder, label_color_
     data = data[scatter_df.index]
     scatter_df = scatter_df.reset_index(drop=True)
 
-    # filter latent vectors to isolate those between
+    # Filter latent vectors to isolate those between
     # the latent variable ranges used to generate the sweep grid
     scatter_points = scatter_df[
         (scatter_df[0] > grids[1].min())
@@ -817,7 +822,7 @@ def InterpolationGrid(patch_dims, grid_size, X_encoded, y, decoder, label_color_
         & (scatter_df[1] < grids[0].max())
     ].copy()
 
-    # map latent space units (percent point function)
+    # Map latent space units (percent point function)
     # to the x, y pixel ranges of the sweep grid
     scatter_points[0] = np.interp(
         scatter_points[0],
@@ -830,7 +835,7 @@ def InterpolationGrid(patch_dims, grid_size, X_encoded, y, decoder, label_color_
         (patch_dims[0] / 2, (figure.shape[0] - patch_dims[0] / 2))
     )
 
-    # plot latent vectors for images
+    # Plot latent vectors for images
     for i in natsorted(scatter_points['cluster_3d'].unique()):
 
         ax.scatter(
@@ -842,7 +847,7 @@ def InterpolationGrid(patch_dims, grid_size, X_encoded, y, decoder, label_color_
             marker='o', label=i, s=scatter_point_size, ec='k', lw=0.25, alpha=scatter_point_alpha
         )
 
-    # channel legend
+    # Channel legend
     legend_elements = []
     for name, (ch, color) in channel_color_dict.items():
 
@@ -854,7 +859,7 @@ def InterpolationGrid(patch_dims, grid_size, X_encoded, y, decoder, label_color_
     )
     ax.add_artist(leg)
 
-    # cluster legend
+    # Cluster legend
     ax.legend(
         loc='upper left', prop={'size': 11}, labelspacing=0.6,
         markerscale=3, bbox_to_anchor=(1, 1.0))
@@ -890,7 +895,7 @@ def ENCODE_IMAGES(config):
             config.window_size, config.window_size, len(config.tif_channels)
         )
 
-        # read background limits computed in remove_background.py
+        # Read background limits computed in remove_background.py
         bkgd_limits = yaml.safe_load(
             open(os.path.join(config.output_path, 
                               '5_background_limits/bkgd_limits.yml'))
@@ -899,10 +904,10 @@ def ENCODE_IMAGES(config):
 
         contrast_limits = yaml.safe_load(open(config.contrast_path))
         
-        # ensure keys in config.tif_channel order
+        # Ensure keys in config.tif_channel order
         contrast_limits = {k: contrast_limits[k] for k in config.tif_channels}  
         
-        # load previously saved encoder and decoder
+        # Load previously saved encoder and decoder
         try:
             encoder = load_model(
                 os.path.join(config.output_path, '6_train_vae/encoder.hdf5')
@@ -920,7 +925,7 @@ def ENCODE_IMAGES(config):
             sys.exit()
 
         ###########################################################################
-        # generate combined training, validation, and test image patch zarrs
+        # Generate combined training, validation, and test image patch zarrs
         
         chunk_size = 200
         
@@ -933,7 +938,7 @@ def ENCODE_IMAGES(config):
             print('Combined data does not exist, creating...')
             print()
             
-            # read training patches
+            # Read training patches
             z1_train_path = os.path.join(
                 config.output_path,
                 f'3_cellcutter_output_win{config.window_size}/'
@@ -942,7 +947,7 @@ def ENCODE_IMAGES(config):
             store = zarr.ZipStore(z1_train_path, mode='r')
             X_train = zarr.open(store=store)
 
-            # read validation patches
+            # Read validation patches
             z1_validate_path = os.path.join(
                 config.output_path,
                 f'3_cellcutter_output_win{config.window_size}'
@@ -951,7 +956,7 @@ def ENCODE_IMAGES(config):
             store = zarr.ZipStore(z1_validate_path, mode='r')
             X_validate = zarr.open(store=store)
 
-            # read test patches
+            # Read test patches
             z1_test_path = os.path.join(
                 config.output_path,
                 f'3_cellcutter_output_win{config.window_size}'
@@ -960,8 +965,8 @@ def ENCODE_IMAGES(config):
             store = zarr.ZipStore(z1_test_path, mode='r')
             X_test = zarr.open(store=store)
 
-            # initialize combo zarr to store combined training, validation, and test data
-            # (cellcutter cuts at 1 cell per chunk for efficient indexing during model training
+            # Initialize combo zarr to store combined training, validation, and test data.
+            # (Cellcutter cuts at 1 cell per chunk for efficient indexing during model training
             # with shuffling, which requires random-access indexing. Rechunking the number of cells
             # per chunk here for efficient image patch encoding.)
             X_combo = zarr.open(
@@ -984,7 +989,7 @@ def ENCODE_IMAGES(config):
             print('Combined segmentation outlines does not exist, creating...')
             print()
             
-            # read cell outlines patches for training data
+            # Read cell outlines patches for training data
             z1_train_path_seg = os.path.join(
                 config.output_path,
                 f'3_cellcutter_output_win{config.window_size}'
@@ -993,7 +998,7 @@ def ENCODE_IMAGES(config):
             store = zarr.ZipStore(z1_train_path_seg, mode='r')
             X_train_seg = zarr.open(store=store)
 
-            # read cell outlines patches for validation data
+            # Read cell outlines patches for validation data
             z1_validate_path_seg = os.path.join(
                 config.output_path,
                 f'3_cellcutter_output_win{config.window_size}'
@@ -1002,7 +1007,7 @@ def ENCODE_IMAGES(config):
             store = zarr.ZipStore(z1_validate_path_seg, mode='r')
             X_validate_seg = zarr.open(store=store)
 
-            # read cell outlines patches for test data
+            # Read cell outlines patches for test data
             z1_test_path_seg = os.path.join(
                 config.output_path,
                 f'3_cellcutter_output_win{config.window_size}'
@@ -1011,7 +1016,7 @@ def ENCODE_IMAGES(config):
             store = zarr.ZipStore(z1_test_path_seg, mode='r')
             X_test_seg = zarr.open(store=store)
 
-            # initialize combo zarr to store combined training, validation, and test data
+            # Initialize combo zarr to store combined training, validation, and test data
             X_combo_seg = zarr.open(
                 combo_dir_seg,
                 mode='w',
@@ -1031,33 +1036,33 @@ def ENCODE_IMAGES(config):
             X_combo_seg.append(X_test_seg, axis=1)
         
         ###########################################################################
-        # sample image patch data
+        # Sample image patch data
 
-        # read combined patches
+        # Read combined patches
         X = zarr.open(combo_dir)
         X = transposeZarr(z=X)
         chunk0 = X.chunksize[0]
 
-        # read combined patches
+        # Read combined patches
         X_seg = zarr.open(combo_dir_seg)
         X_seg = transposeZarr(z=X_seg)
 
-        # read training labels
+        # Read training labels
         y_train = pd.read_csv(
             os.path.join(config.output_path, '1_cellcutter_input/train_qc.csv')
         )
 
-        # read validation labels
+        # Read validation labels
         y_validate = pd.read_csv(
             os.path.join(config.output_path, '1_cellcutter_input/validate_qc.csv')
         )
 
-        # read test labels
+        # Read test labels
         y_test = pd.read_csv(
             os.path.join(config.output_path, '1_cellcutter_input/test_qc.csv')
         )
 
-        # combine labels for training, validation, and test data
+        # Combine labels for training, validation, and test data
         y = pd.concat([y_train, y_validate, y_test], axis=0)
         y['Sample'] = y['Sample'].astype(str)
 
@@ -1065,7 +1070,7 @@ def ENCODE_IMAGES(config):
             
             idxs = rng.choice(X.shape[0], size=config.clustering_sample_size, replace=False)
             
-            # slicing can change the original chunk size, ensure equivalent chunk sizes between
+            # Slicing can change the original chunk size, ensure equivalent chunk sizes between
             # filtered X and sample_labels in da.map_blocks by 
             # explicitly rechunking axis0 (number of cells)
             chunk0 = X.chunksize[0]
@@ -1075,7 +1080,7 @@ def ENCODE_IMAGES(config):
             y = y.iloc[idxs].copy()
 
         ###########################################################################
-        # preprocess image patch data
+        # Preprocess image patch data
         
         mask, vmin, vmax = compute_vignette_mask(
             window_size=config.window_size, std_dev=config.mask_std_dev
@@ -1092,7 +1097,7 @@ def ENCODE_IMAGES(config):
         X_transform = da.map_blocks(
             remove_background, X, sample_labels, bkgd_limits, 
             dtype=np.float32  
-            # dtype required to avoid ValueError: dtype inference failed in map_blocks
+            # dtype is required to avoid ValueError: dtype inference failed in map_blocks
         )
 
         if config.masked_model:
@@ -1101,7 +1106,7 @@ def ENCODE_IMAGES(config):
             X_transform *= mask
 
         ###########################################################################
-        # encode images
+        # Encode images
         
         if config.cluster_full_dataset:
             num_cells = 'FULL'
@@ -1127,21 +1132,21 @@ def ENCODE_IMAGES(config):
             temp.columns = [f'vae_{i}' for i in temp.columns]
             x_encoded_df = pd.concat(
                 [y['CellID'].reset_index(drop=True), pd.DataFrame(temp)], axis=1)
-            x_encoded_df.to_csv(
+            x_encoded_df.to_parquet(
                 os.path.join(
                     save_dir, 
-                    f'encodings_{num_cells}.csv'), 
+                    f'encodings_{num_cells}.parquet'), 
                 index=False
             )
 
         ###########################################################################
-        # embed latent vectors
+        # Embed latent vectors
         
         if (config.latent_dimension > 2):
             embedding_path = os.path.join(save_dir, f'embedding_{num_cells}.npy')
             
             try:
-                # load previously saved embedding
+                # Load previously saved embedding
                 X_encoded_embedded = np.load(embedding_path)
 
             except (FileNotFoundError):
@@ -1204,15 +1209,15 @@ def ENCODE_IMAGES(config):
 
                     print('Embedding completed in ' + str(datetime.now() - startTime))
 
-                # save embedding
+                # Save embedding
                 np.save(os.path.join(save_dir, f'embedding_{num_cells}'), X_encoded_embedded)
 
         else:
-            # simply assign the 2D X_encoded the variable X_encoded_embedded
+            # Just assign the 2D X_encoded to the variable X_encoded_embedded
             X_encoded_embedded = X_encoded.copy()
 
         ###########################################################################
-        # cluster VAE encodings in embedding space with HDBSCAN
+        # Cluster VAE encodings in embedding space with HDBSCAN
         
         print(f'Minimum_cluster_size is {config.hdbscan_min_cluster_size}')
 
@@ -1228,10 +1233,11 @@ def ENCODE_IMAGES(config):
             prediction_data=False,
             match_reference_implementation=False).fit(X_encoded_embedded)
         print(np.unique(clustering.labels_))
+        np.save(os.path.join(save_dir, 'hdbscan_labels.npy'), clustering.labels_)
         print()
 
         ###########################################################################
-        # plot VAE encodings in embedding space colored by various labels
+        # Plot VAE encodings in embedding space colored by various labels
         
         labels_list = {
             'cylinter': y[config.cluster_column],
@@ -1268,7 +1274,7 @@ def ENCODE_IMAGES(config):
             )
 
         ###########################################################################
-        # decode latent vectors to visualize learned reconstructions
+        # Decode latent vectors to visualize learned reconstructions
 
         X_decoded, X_decoded_reversed = DecodeVectors(
             decoder=decoder, X_encoded=X_encoded, X=X, X_seg=X_seg, sample_labels=sample_labels,
@@ -1279,10 +1285,10 @@ def ENCODE_IMAGES(config):
             chunk_size=chunk_size, intensity_multiplier=1.3
         )
 
-        # plot latent vectors as their learned reconstructions
+        # Plot latent vectors as their learned reconstructions
         PlotLatentSpace(
             reconstructions=True,
-            zoom=2.5,
+            zoom=config.zoom,
             X_encoded_embedded=X_encoded_embedded,
             X_decoded_reversed=X_decoded_reversed,
             y=None,
@@ -1292,14 +1298,14 @@ def ENCODE_IMAGES(config):
             save_dir=save_dir
         )
 
-        # get input and output images of lassoed latent vectors for targeted analysis of vectors 
+        # Get input and output images of lassoed latent vectors for targeted analysis of vectors 
         if config.lasso_vector_tool:
 
             LassoVectors(
                 contrast_limits=contrast_limits,
                 patch_dims=patch_dims,
                 imgs_instead_of_points=False,
-                zoom=2.5,
+                zoom=config.zoom,
                 X=X,
                 X_seg=X_seg,
                 X_encoded=X_encoded,
@@ -1315,7 +1321,7 @@ def ENCODE_IMAGES(config):
                 save_dir=save_dir
             )
 
-        # plot learned reconstructions of input image patches
+        # Plot learned reconstructions of input image patches
         PlotReconstructedImages(
             patch_dims=patch_dims,
             X=X,
@@ -1332,7 +1338,7 @@ def ENCODE_IMAGES(config):
             save_dir=save_dir
         )
            
-        # compute mean squared error between input image patches and their learned reconstructions
+        # Compute mean squared error between input image patches and their learned reconstructions
         (average_error,
          errors,
          X_transform_outliers,
@@ -1352,7 +1358,7 @@ def ENCODE_IMAGES(config):
             save_dir=save_dir
         )
 
-        # visualize input image patches associated with poor learned reconstructions
+        # Visualize input image patches associated with poor learned reconstructions
         PlotReconstructedImages(
             patch_dims=patch_dims,
             X=X_transform_outliers,
@@ -1369,9 +1375,7 @@ def ENCODE_IMAGES(config):
             save_dir=save_dir
         )
 
-        ###########################################################################
-        # display interpolation grid of learned reconstructions
-        
+        # Display interpolation grid of learned reconstructions
         if config.latent_dimension == 2:
             InterpolationGrid(
                 patch_dims=patch_dims,
@@ -1386,5 +1390,7 @@ def ENCODE_IMAGES(config):
                 make_sample_sizes_equal=False,
                 img_brightness_multiplier=1.2,
                 scatter_point_alpha=1.0,
+                tif_channels=config.tif_channels,
                 save_dir=save_dir
+                
             )

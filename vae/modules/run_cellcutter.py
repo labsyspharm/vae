@@ -89,7 +89,7 @@ def RUN_CELLCUTTER(config):
                 elif line.endswith('_seg\n'):
                     processed_samples_seg.add(line.strip())
 
-    for name in ['train', 'test', 'validate']:  # ['train', 'test', 'validate']
+    for name in ['train', 'test', 'validate']:
 
         X_combo = None
         X_combo_seg = None
@@ -146,26 +146,26 @@ def RUN_CELLCUTTER(config):
                 logger.info(f'Cutting data for {checkpoint_key_patches}...')
                 print()  
 
-                # Handle paths to TIFFs, masks, and outlines
+                # Handle file paths for single and multi-tissue use cases
                 if os.path.exists(os.path.join(config.tif_path, f"{sample}.ome.tif")):
-                    # multi-tissue input
+                    # Multi-tissue input
                     tif_path = os.path.join(config.tif_path, f"{sample}.ome.tif")
                 else:
-                    # single-tissue input
+                    # Single-tissue input
                     tif_path = config.tif_path
     
                 if os.path.exists(os.path.join(config.mask_path, f"{sample}.ome.tif")):
-                    # multi-tissue input
+                    # Multi-tissue input
                     mask_path = os.path.join(config.mask_path, f"{sample}.ome.tif")
                 else:
-                    # single-tissue input
+                    # Single-tissue input
                     mask_path = config.mask_path
                 
                 if os.path.exists(os.path.join(config.outlines_path, f"{sample}.ome.tif")):
-                    # multi-tissue input
+                    # Multi-tissue input
                     outlines_path = os.path.join(config.outlines_path, f"{sample}.ome.tif")
                 else:
-                    # single-tissue input
+                    # Single-tissue input
                     outlines_path = config.outlines_path
 
                 # Check pixel size of image

@@ -28,12 +28,14 @@ from ..utils import (
 )
 
 ###############################################################################
-# to run this script interactively on HMS o2 GPU partition:
+# For internal use:
+
+# To run this script interactively on HMS o2 GPU partition:
 
 # srun --pty -p gpu_quad -t 0-24:00 --gres=gpu:1 --mem=50G bash
 
-# to see specs for node: scontrol show node compute-gc-17-152 
-# to see specs for the resourced GPU(s): nvidia-smi
+# To see specs for node: scontrol show node compute-gc-17-152 
+# To see specs for the resourced GPU(s): nvidia-smi
 
 # conda activate vae
 
@@ -46,7 +48,7 @@ from ..utils import (
 # vae --module TRAIN_VAE config.yml
 # requires tensorflow-gpu to be installed
 
-# to run this script with sbatch:
+# To run this script with sbatch:
 # sh ~/scripts/vae/submit.sh
 ###############################################################################
 
@@ -142,17 +144,17 @@ def rotate_batch(batch):
 
 
 def latest_keras_model_checkpoint(checkpoint_path):
-    # list all files in the checkpoint directory
+    # List all files in the checkpoint directory
     checkpoints = [f for f in os.listdir(checkpoint_path) if 
                    f.endswith('.keras')]
     
     if not checkpoints:
         raise ValueError("No checkpoints found in the directory.")
     
-    # get the full path of each checkpoint
+    # Get the full path of each checkpoint
     checkpoints = [os.path.join(checkpoint_path, f) for f in checkpoints]
     
-    # sort checkpoints based on modification time
+    # Sort checkpoints based on modification time
     latest_checkpoint = max(checkpoints, key=os.path.getmtime)
     
     return latest_checkpoint
@@ -176,48 +178,45 @@ def build_and_fit_model(img_shape, latent_dimension, learning_rate, training_epo
         filters=64, kernel_size=3, padding='same', activation='relu'
     )(x)
 
-    # MAX POOL
-    # x = layers.MaxPooling2D(pool_size=(2, 2), strides=2, padding='valid')(x)
-
     x = layers.Conv2D(
         filters=64, kernel_size=3, padding='same', activation='relu'
     )(x)
 
-    # need to know the shape of the network here for the decoder
+    # Need to know the shape of the network here for the decoder
     shape_before_flattening = K.int_shape(x)
 
     x = layers.Flatten()(x)
-    # 850 was hardcoded here instead of latent_dimension
-    x = layers.Dense(latent_dimension, activation='relu')(x)  # 850, was 32
 
-    # two outputs, latent mean and (log)variance
+    x = layers.Dense(latent_dimension, activation='relu')(x)
+
+    # Two outputs, latent mean and (log)variance
     z_mu = layers.Dense(latent_dimension, name='z_mu')(x)
     z_log_sigma = layers.Dense(latent_dimension, name='z_log_sigma')(x)
 
-    # SAMPLING FUNCTION
     def sampling(args):
+        """SAMPLING FUNCTION"""
         z_mu, z_log_sigma = args
         epsilon = K.random_normal(
             shape=(K.shape(z_mu)[0], latent_dimension), mean=0.0, stddev=1.0
         )
         return z_mu + K.exp(z_log_sigma) * epsilon
 
-    # sample vector from the latent distribution
+    # Sample vector from the latent distribution
     z = layers.Lambda(sampling)([z_mu, z_log_sigma])
 
-    # DECODER NETWORK
-    # decoder takes the latent distribution sample as input
+    # DECODER NETWORK:
+    # Decoder takes the latent distribution sample as input
     decoder_input = layers.Input(K.int_shape(z)[1:])
 
-    # expand to N total pixels
+    # Expand to N total pixels
     x = layers.Dense(
         np.prod(shape_before_flattening[1:]), activation='relu'
     )(decoder_input)
 
-    # reshape
+    # Reshape
     x = layers.Reshape(shape_before_flattening[1:])(x)
 
-    # use Conv2DTranspose to reverse the conv layers from the encoder
+    # Use Conv2DTranspose to reverse the conv layers from the encoder
     x = layers.Conv2DTranspose(
         filters=32, kernel_size=3, padding='same', activation='relu', 
         strides=(2, 2)
@@ -227,13 +226,13 @@ def build_and_fit_model(img_shape, latent_dimension, learning_rate, training_epo
         activation='sigmoid'
     )(x)
 
-    # decoder model statement
+    # Decoder model statement
     decoder = Model(decoder_input, x)
 
-    # apply the decoder to the sample from the latent distribution
+    # Apply the decoder to the sample from the latent distribution
     z_decoded = decoder(z)
 
-    # construct a custom layer to calculate the loss
+    # Construct a custom layer to calculate the loss
     @keras.saving.register_keras_serializable()
     class CustomVariationalLayer(keras.layers.Layer):
 
@@ -241,7 +240,7 @@ def build_and_fit_model(img_shape, latent_dimension, learning_rate, training_epo
             x = K.flatten(x)
             z_decoded = K.flatten(z_decoded)
             
-            # reconstruction loss
+            # Reconstruction loss
             xent_loss = keras.metrics.mean_squared_error(x, z_decoded)
             # xent_loss = keras.metrics.binary_crossentropy(x, z_decoded)
 
@@ -251,8 +250,8 @@ def build_and_fit_model(img_shape, latent_dimension, learning_rate, training_epo
             )
             return K.mean(xent_loss + kl_loss)
 
-        # adds the custom loss to the class
         def call(self, inputs):
+            """Add the custom loss to the class"""
             x = inputs[0]
             z_decoded = inputs[1]
             z_mu = inputs[2]
@@ -261,8 +260,7 @@ def build_and_fit_model(img_shape, latent_dimension, learning_rate, training_epo
             self.add_loss(loss, inputs=inputs)
             return x
 
-    # apply the custom loss to the input images and the
-    # decoded latent distribution sample
+    # Apply custom loss to the input images and decoded latent distribution sample
     y = CustomVariationalLayer()([input_img, z_decoded, z_mu, z_log_sigma])
 
     # VAE model statement
@@ -270,7 +268,7 @@ def build_and_fit_model(img_shape, latent_dimension, learning_rate, training_epo
     vae.compile(optimizer='RMSprop', loss=None)
     vae.summary()
 
-    # initialize tensorboard
+    # Initialize tensorboard
     tensorboard_log_dir = os.path.join(save_dir, 'tensorboard_logs/fit')
     log_dir = os.path.join(
         tensorboard_log_dir, datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -285,14 +283,14 @@ def build_and_fit_model(img_shape, latent_dimension, learning_rate, training_epo
 
     checkpoint_path = f"{save_dir}/checkpoints"
     
-    # load existing model
+    # Load existing model
     if os.path.exists(checkpoint_path):
 
         latest_checkpoint = latest_keras_model_checkpoint(
             checkpoint_path=checkpoint_path
         )
 
-        # load an arbitrary model (optional)
+        # Optional: load an arbitrary model (optional)
         # latest_checkpoint = (
         #     '/Users/greg/projects/vae-paper/src/input/'
         #     'VAE9_VIG7/5_train_vae/val_loss-0.00083-model.keras'
@@ -301,10 +299,10 @@ def build_and_fit_model(img_shape, latent_dimension, learning_rate, training_epo
         print(f'Loading latest model at {latest_checkpoint}')
         print()
 
-        # load latest model
+        # Load latest model
         vae = load_model(latest_checkpoint, compile=True, safe_mode=False) 
         
-        # set initial_value_threshold
+        # Set initial_value_threshold
         pattern = r'val_loss-(\d+\.\d+)-model\.keras'
         match = re.search(pattern, latest_checkpoint)
         initial_value_threshold = float(match.group(1))
@@ -312,7 +310,7 @@ def build_and_fit_model(img_shape, latent_dimension, learning_rate, training_epo
     else:
         initial_value_threshold = None
 
-    # initialize model checkpoint callback
+    # Initialize model checkpoint callback
     model_checkpoint = ModelCheckpoint(
         filepath=os.path.join(
             checkpoint_path, 'val_loss-{val_loss:.5f}-model.keras'),
@@ -321,7 +319,7 @@ def build_and_fit_model(img_shape, latent_dimension, learning_rate, training_epo
         initial_value_threshold=initial_value_threshold
     )
 
-    # fit model
+    # Fit model
     vae.fit(
         x=training_data_generator, steps_per_epoch=steps_per_epoch,
         validation_data=validation_data_generator, 
@@ -332,21 +330,20 @@ def build_and_fit_model(img_shape, latent_dimension, learning_rate, training_epo
 
     if os.path.exists(checkpoint_path):
         
-        # encoder model statement
+        # Encoder model statement
         encoder_input = vae.input
         encoder_output = vae.get_layer('z_mu').output
         encoder = Model(encoder_input, encoder_output)
 
-        # extract decoder from vae model
+        # Extract decoder from VAE model
         decoder = vae.get_layer('model')
 
     else:
-        # encoder model statement
+        # Encoder model statement
         encoder = Model(input_img, z_mu)
+        # In this case, the decoder model statement is specified in VAE built above 
 
-        # decoder model statement is specified in VAE built above in this case
-
-    # save the encoder and decoder models after training
+    # Save the encoder and decoder models after training
     save_model(
         encoder, f'{save_dir}/encoder.hdf5', overwrite=True, 
         include_optimizer=True
@@ -363,7 +360,7 @@ def TRAIN_VAE(config):
        os.path.join(config.output_path,
                     'checkpoints/TRAIN_VAE.txt')):
 
-        # clear backend, set random state seed
+        # Clear backend, set random state seed
         K.clear_session()
         np.random.seed(237)
 
@@ -382,13 +379,14 @@ def TRAIN_VAE(config):
         path_numbers = re.findall(r'\d+', cellcutter_output_path)
         window_size = [int(i) for i in path_numbers][-1]
 
-        # Read training and validation patches (16-bit unsigned integers)
+        # Read training and validation patches
         z1_train_path = (
             os.path.join(cellcutter_output_path, 
                          f'train_patches_{window_size}_qc.zip')
         )
         store = zarr.ZipStore(z1_train_path, mode='r')
         X_train = zarr.open(store=store)
+        # Optional subsample:
         # X_train = X_train[:, 0:1000, :, :]
         # X_train = zarr.array(
         #     X_train, chunks=(21, 1, 62, 62), dtype=X_train.dtype
@@ -401,6 +399,7 @@ def TRAIN_VAE(config):
         )
         store = zarr.ZipStore(z1_validate_path, mode='r')
         X_valid = zarr.open(store=store)
+        # Optional subsample:
         # X_valid = X_valid[:, 0:1000, :, :]
         # X_valid = zarr.array(
         #     X_valid, chunks=(21, 1, 62, 62), dtype=X_valid.dtype
@@ -413,7 +412,7 @@ def TRAIN_VAE(config):
         )
         y_train = y_train['Sample'].astype('str')
         
-        # read validation labels
+        # Read validation labels
         y_valid = pd.read_csv(
             os.path.join(config.output_path,
                          '1_cellcutter_input/validate_qc.csv')
@@ -438,7 +437,7 @@ def TRAIN_VAE(config):
         )
 
         # Initialize training data generator
-        # (does not seem to work with multi-GPU processing)
+        # (does not work with multi-GPU processing)
         training_data_generator = DataGenerator(
             name='train', zarr=X_train, y=y_train, 
             batch_size=config.batch_size, bkgd_limits=bkgd_limits, 

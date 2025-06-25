@@ -41,10 +41,10 @@ def PlotInputImgs(numExamples, numColumns, imgs, seg, intensity_multiplier, labe
         plt.yticks([])
         plt.grid(False)
        
-        # initialize array of zeros with shape of full-size image
+        # Initialize array of zeros with same shape as image patch
         overlay = np.zeros((imgs.shape[2], imgs.shape[3]))
 
-        # add centroid point at the center of the image
+        # Add centroid point at the center of the patch
         overlay[
             int(imgs.shape[2] / 2):int(imgs.shape[2] / 2) + 1,
             int(imgs.shape[3] / 2):int(imgs.shape[3] / 2) + 1
@@ -61,7 +61,7 @@ def PlotInputImgs(numExamples, numColumns, imgs, seg, intensity_multiplier, labe
             
             lyr = img_as_float(lyr)
 
-            # apply image contrast settings
+            # Apply image contrast settings
             if str(imgs.dtype) == 'uint16':
                 divisor = 65535
             elif str(imgs.dtype) == 'uint8':
@@ -84,13 +84,13 @@ def PlotInputImgs(numExamples, numColumns, imgs, seg, intensity_multiplier, labe
 
             custom_lines.append(Line2D([0], [0], color=color, lw=5))
 
-        # select segmentation outlines slice
+        # Select segmentation outlines slice
         seg_slice = seg[0, row, :, :]
 
-        # ensure segmentation outlines are normalized 0-1
+        # Ensure segmentation outlines are normalized 0-1
         seg_slice = (seg_slice - np.min(seg_slice)) / np.ptp(seg_slice)
 
-        # convert segmentation thumbnail to RGB
+        # Convert segmentation slice to RGB
         seg_slice = gray2rgb(seg_slice) * 0.25  # decrease alpha
 
         overlay += seg_slice
@@ -140,24 +140,24 @@ def GENERATE_IMAGE_GALLERY(config):
         csv = pd.read_csv(csv_path)
         csv['Sample'] = csv['Sample'].astype(str)
 
-        # read training images
+        # Read test patches
         zip_store_path = os.path.join(
             cellcutter_output_path, 
             f'test_patches_{config.window_size}_qc.zip'
         )
         z = zarr.open(zarr.ZipStore(zip_store_path), mode='r')
         
-        # read segmentation thumbnails for test data (16-bit unsigned integer)
+        # Read test segmentation patches
         zip_store_path_seg = os.path.join(
             cellcutter_output_path, 
             f'test_patches_{config.window_size}_qc_seg.zip'
         )
         z_seg = zarr.open(zarr.ZipStore(zip_store_path_seg), mode='r')
 
-        # contrast settings
+        # Contrast settings
         contrast_limits = yaml.safe_load(open(config.contrast_path))
 
-        # pull random thumbnails from training data to check quality
+        # Pull random patches from training data to check quality
         patch_ids = np.random.RandomState(1).choice(
             range(0, z.shape[1]), config.gallery_size, replace=False
         )

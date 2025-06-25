@@ -42,6 +42,7 @@ class Config:
         config.channel_colors = dict(data['channel_colors'])
         config.hdbscan_min_cluster_size = int(data['hdbscan_min_cluster_size'])
         config.scatter_point_size = float(data['scatter_point_size'])
+        config.zoom = float(data['zoom'])
         config.lasso_vector_tool = bool(data['lasso_vector_tool'])
         return config
 

@@ -1,14 +1,12 @@
-# Standard library imports
 import os
 import sys
+import glob
 import yaml
 import pickle
 import random
 
-# Third-party imports
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 from sklearn.metrics.pairwise import cosine_similarity
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
@@ -46,27 +44,31 @@ def input_output(config):
         len(config.tif_channels)
     )
 
-    # create save dir
+    # Create save dir
     save_dir = os.path.join(
-        config.output_path, f'7_saliency_map_LD{config.latent_dimension}'
+        config.output_path, f'8_saliency_map_LD{config.latent_dimension}'
     )
     if not os.path.exists(save_dir):
         os.mkdir(save_dir)
 
-    # read combined training, validation, and test image patches
+    # Read combined training, validation, and test image patches
     combo_dir = os.path.join(
         config.output_path, 
-        f'6_latent_space_LD{config.latent_dimension}/combined_zarr'
+        f'7_latent_space_LD{config.latent_dimension}/combined_zarr'
     )
+
     X = zarr.open(combo_dir)
     X = transposeZarr(z=X)
     
-    # load percentile cutoffs
+    # Load percentile cutoffs
     cutoffs_dir = os.path.join(
         config.output_path, '4_feature_preprocessing_selections'
     )
-    with open(os.path.join(cutoffs_dir, 'cutoffs.pkl'), 'rb') as handle:
-        percentile_cutoffs = pickle.load(handle)
+    try:
+        with open(os.path.join(cutoffs_dir, 'cutoffs.pkl'), 'rb') as handle:
+            percentile_cutoffs = pickle.load(handle)
+    except FileNotFoundError:
+        percentile_cutoffs = None
     
     # background_dir = os.path.join(
     #     config.output_path, '5_background_limits'
@@ -76,13 +78,13 @@ def input_output(config):
     # )
     # bkgd_limits = {eval(k): v for k, v in bkgd_limits.items()}
 
-    # image contrast limits
+    # Image contrast limits
     contrast_limits = yaml.safe_load(open(config.contrast_path))
 
-    # load previously saved encoder and decoder
+    # Load previously saved encoder and decoder
     try:
         encoder = load_model(
-            os.path.join(config.output_path, '5_train_vae/encoder.hdf5')
+            os.path.join(config.output_path, '6_train_vae/encoder.hdf5')
         )
     except OSError:
         print('Encoder not found.')
@@ -90,13 +92,13 @@ def input_output(config):
 
     try:
         decoder = load_model(
-            os.path.join(config.output_path, '5_train_vae/decoder.hdf5')
+            os.path.join(config.output_path, '6_train_vae/decoder.hdf5')
         )
     except OSError:
         print('Decoder not found.')
         sys.exit()
     
-    # read leiden clusters
+    # Read Leiden clusters if they have been computed previously
     try:
 
         if config.output_path.name == 'VAE9_VIG7':
@@ -121,24 +123,42 @@ def input_output(config):
                              'encodings_FULL-patches.csv')
             )
     except FileNotFoundError:
+        # Use HDBSCAN clusters to compute concept saliency
+        clusters = np.load(
+            os.path.join(
+                config.output_path, 
+                f'7_latent_space_LD{config.latent_dimension}/hdbscan_labels.npy')
+        )
+        clusters = pd.DataFrame(data={'Cluster': clusters})
         print()
-        print('Leiden encodings not found, aborting. Compute them with scanpy and re-try.')
-        sys.exit(1)
 
-    # read encodings
+    # Read encodings
     if not os.path.exists(os.path.join(save_dir, 'concept_vectors.pkl')) or \
        not os.path.exists(os.path.join(save_dir, 'concept_scores.pkl')):
       
         print()
         print('Reading encodings...')
-        encodings = pd.read_parquet(
-            os.path.join(config.output_path, 
-                         f'6_latent_space_LD{config.latent_dimension}/'
-                         f'{config.output_path.name}_encodings.parquet')
+
+        encoding_dir = os.path.join(
+            config.output_path,
+            f'7_latent_space_LD{config.latent_dimension}'
         )
 
-        # add clusters to encodings dataframe
-        encodings['cluster'] = clusters['Cluster']
+        # Use glob to match the wildcard encodings file pattern
+        parquet_files = glob.glob(os.path.join(
+            encoding_dir,
+            'encodings*.parquet')
+        )
+        # Check if any files were found
+        if parquet_files:
+            encodings = pd.read_parquet(parquet_files[0])  # use the first match
+            
+            # Add clusters to encodings dataframe
+            encodings['cluster'] = clusters['Cluster']
+        else:
+            raise FileNotFoundError("No encoding parquet file found.")
+            sys.exit(1)
+        
         print()
     else:
         encodings = None
@@ -147,20 +167,21 @@ def input_output(config):
             contrast_limits, encodings, encoder, decoder, clusters)
 
 
-# ACHIVAL VERSION
+# ARCHIVAL REVERSE PROCESSING FUNCTION
 def reverse_processing(percentile_cutoffs, channel_slice, channel_name, contrast_limits):
     """Reverses percentile normalization and log10-transformation,
        pixel outliers remained clipped)."""
 
-    lower_cutoff_log, upper_cutoff_log = percentile_cutoffs[channel_name]
+    if percentile_cutoffs is not None:
+        lower_cutoff_log, upper_cutoff_log = percentile_cutoffs[channel_name]
 
-    # reverse percentile normalization
-    channel_slice = (
-        (((upper_cutoff_log - lower_cutoff_log) * (channel_slice - 0)) /
-         (1 - 0)) + lower_cutoff_log
-    )
+        # Reverse percentile normalization
+        channel_slice = (
+            (((upper_cutoff_log - lower_cutoff_log) * (channel_slice - 0)) /
+             (1 - 0)) + lower_cutoff_log
+        )
 
-    # reverse log10-transform
+    # Reverse log10-transform
     channel_slice = np.rint(10 ** channel_slice)
 
     # Normalize pixel values between lower and upper percentile bounds
@@ -178,7 +199,7 @@ def reverse_processing(percentile_cutoffs, channel_slice, channel_name, contrast
     return channel_slice
 
 
-def DecodeVectors(decoder, img_dims, concept_vectors, percentile_cutoffs, contrast_limits, channel_color_dict, intensity_multiplier):
+def DecodeVectors(decoder, img_dims, concept_vectors, percentile_cutoffs, contrast_limits, tif_channels, channel_color_dict, intensity_multiplier):
 
     decoded_concept_vectors = {}
 
@@ -191,21 +212,23 @@ def DecodeVectors(decoder, img_dims, concept_vectors, percentile_cutoffs, contra
         reconstructed_img = decoded.reshape(
             img_dims[0], img_dims[1], img_dims[2])
 
-        # initialize image overlay
+        # Initialize image overlay
         overlay = np.zeros(
             (reconstructed_img.shape[0], reconstructed_img.shape[1])
         )
 
         overlay = gray2rgb(overlay)
 
-        for name, (ch, color) in channel_color_dict.items():
+        for name, color in channel_color_dict.items():
+
+            ch = tif_channels.index(name)
 
             channel_slice = reconstructed_img[:, :, ch]
 
             channel_slice = reverse_processing(
                 percentile_cutoffs, channel_slice, name, contrast_limits
             )
-            
+
             bar[name] = channel_slice.sum()
             
             # 0-1 normalize channel intensities per concept
@@ -252,7 +275,7 @@ def SALIENCY_MAP(config):
         (img_dims, save_dir, X, percentile_cutoffs, contrast_limits,
          encodings, encoder, decoder, clusters) = input_output(config)
 
-        # concepts to analyze
+        # Concepts to analyze
         concepts = sorted(clusters['Cluster'].unique())
         
         # VAE9_VIG7
@@ -269,11 +292,10 @@ def SALIENCY_MAP(config):
         # occlusion_window = (16, 16, 1)
         # q1, q2 = (0.1, 99.6)  # lower/upper attribution score thresholds
         
-        # quantile of positive concept distribution 
-        # to sample image patches from
+        # Quantile of positive concept distribution to sample image patches from
         scores_quantile = 0.95
         
-        # number of top scoring image patches to plot
+        # Number of top scoring image patches to plot
         n_top_scores = 15
         
         # AVAILABLE ATTRIBUTION METHODS ARE:
@@ -306,11 +328,14 @@ def SALIENCY_MAP(config):
         }
 
         ############################################################
-        # preprocess image patches
+        # Preprocess image patches
+        if percentile_cutoffs is not None:
+            X_transform = clip_outlier_pixels(
+                log_transform(X), percentile_cutoffs=percentile_cutoffs
+            )
+        else:
+            X_transform = log_transform(X)
         
-        X_transform = clip_outlier_pixels(
-            log_transform(X), percentile_cutoffs=percentile_cutoffs
-        )
         mask, vmin, vmax = compute_vignette_mask(
             window_size=config.window_size, std_dev=config.mask_std_dev
         )
@@ -318,79 +343,10 @@ def SALIENCY_MAP(config):
             print('Applying Gaussian vignette mask.')
             print()
             X_transform *= mask
-        
-        ############################################################
-        # OLD IMPLEMENTATION (COMPUTES FULL COSINE SIMILARITY MATRIX)
-        
-        # if not os.path.exists(os.path.join(save_dir, 'concept_vectors.pkl')):
-
-        #     # select image patch encodings with highest average cosine
-        #     # similarities to all other image patches in a given cluster
-        #     concept_data = {}
-        #     for concept in concepts:
-
-        #         print(
-        #             'Computing cosine similarity scores for '
-        #             f'cluster {concept} encodings...')
-
-        #         idxs = clusters.index[clusters['Cluster'] == concept]
-        #         z_plus = encodings.loc[idxs].drop(
-        #             columns=['CellID', 'cluster']
-        #         )
-
-        #         n_rows = len(z_plus)
-        #         cosine_matrix = np.zeros((n_rows, n_rows), dtype=np.float64)
-
-        #         z_plus_chunk_size = 10000
-                
-        #         n_first_loop = len(range(0, n_rows, z_plus_chunk_size))
-        #         total_iterations = int((n_first_loop * (n_first_loop + 1))/2)
-        #         with tqdm(total=total_iterations, desc='Progress') as pbar:
-                    
-        #             for i in range(0, n_rows, z_plus_chunk_size):
-        #                 for j in range(i, n_rows, z_plus_chunk_size):
-
-        #                     end_i = min(i + z_plus_chunk_size, n_rows)
-        #                     end_j = min(j + z_plus_chunk_size, n_rows)
-                            
-        #                     chunk1 = z_plus.iloc[i:end_i]
-        #                     chunk2 = z_plus.iloc[j:end_j]
-                            
-        #                     cos = cosine_similarity(chunk1, chunk2)
-
-        #                     cosine_matrix[i:end_i, j:end_j] = cos
-
-        #                     if i != j:
-        #                         cosine_matrix[j:end_j, i:end_i] = cos.T
-
-        #                     pbar.update(1)
-
-        #         # show that piece-wise matrix computation is identical
-        #         # to full matrix composition if dataset is small enough
-        #         # to compute full matrix
-                
-        #         # full_cosine_matrix = cosine_similarity(z_plus)
-        #         # identical = np.allclose(
-        #         #     cosine_matrix, full_cosine_matrix, atol=1e-10
-        #         # )
-        #         # print(
-        #         #     'Matrix identical to cosine_similarity(df)?', identical
-        #         # )
-                
-        #         sorted_row_sim_means = pd.Series(
-        #             np.mean(cosine_matrix, axis=1)
-        #             ).sort_values(ascending=False)
-
-        #         # select top N encodings with highest average cosine similarity
-        #         # with other encodings in the same cluster
-        #         top = sorted_row_sim_means.iloc[0:1].index
-
-        #         concept_data[concept] = z_plus.iloc[top]
-        #         print()
 
         if not os.path.exists(os.path.join(save_dir, 'concept_vectors.pkl')):
 
-            # select image patch encodings with highest average cosine
+            # Select image patch encodings with highest average cosine
             # similarities to all other image patches in a given cluster
             concept_data = {}
             for concept in concepts:
@@ -419,8 +375,8 @@ def SALIENCY_MAP(config):
             print()
             
             ############################################################
-            # compute concept vectors (Zc) 
-            # (step 4 of the concept-saliency-maps algorithm in Brocki, 2019)
+            # Compute concept vectors (Zc) 
+            # (Step 4 of the concept-saliency-maps algorithm in Brocki, 2019.)
             
             concept_vectors = {}
             for concept, z_plus in concept_data.items():
@@ -455,7 +411,7 @@ def SALIENCY_MAP(config):
                 concept_vectors = pickle.load(handle)
         
         ############################################################
-        # decode concept vectors and view their learned reconstructions
+        # Decode concept vectors and view their learned reconstructions
         
         print('Decoding concept vectors...')
 
@@ -465,12 +421,13 @@ def SALIENCY_MAP(config):
             concept_vectors=concept_vectors,
             percentile_cutoffs=percentile_cutoffs, 
             contrast_limits=contrast_limits,
+            tif_channels=config.tif_channels,
             channel_color_dict=config.channel_colors,
             intensity_multiplier=decoded_intensity_multiplier
         )
         
-        # fig = plt.figure(figsize=(11, 3.9))  # VAE9_VIG7
-        fig = plt.figure(figsize=(9, 2.7))  # VAE30
+        fig = plt.figure(figsize=(11, 3.9))  # VAE9_VIG7
+        # fig = plt.figure(figsize=(9, 2.7))  # VAE30
         
         rows_rounded_up = len(concepts) // 8 + bool(len(concepts) % 8)
         height_ratios = [1] * rows_rounded_up
@@ -482,6 +439,7 @@ def SALIENCY_MAP(config):
         outer_gs = gridspec.GridSpec(
             rows, cols, height_ratios=height_ratios, hspace=0.1, wspace=0.7
         )  # VAE9_VIG7
+        
         # outer_gs = gridspec.GridSpec(
         #     rows, cols, height_ratios=[1, 1], hspace=0.1, wspace=0.7
         # )  # VAE30
@@ -500,9 +458,8 @@ def SALIENCY_MAP(config):
             ax1.bar(
                 x=range(len(config.channel_colors)),
                 height=[val for val in decoded_cvs[concept][1].values()],
-                color=[config.channel_colors[ch][1] for ch in
-                       decoded_cvs[concept][1].keys()
-                       ],
+                color=[config.channel_colors[name] for name in
+                       decoded_cvs[concept][1].keys()],
                 width=0.8
             )
             ax1.set_xticks([])
@@ -527,7 +484,7 @@ def SALIENCY_MAP(config):
             ax2.axis('off')
 
         legend_elements = []
-        for name, (ch, color) in config.channel_colors.items():
+        for name, color in config.channel_colors.items():
             legend_elements.append(
                 Line2D([0], [0], color=color, lw=5, label=name)
             )
@@ -558,8 +515,8 @@ def SALIENCY_MAP(config):
         print()
 
         ############################################################
-        # compute concept scores (Sc) for latent vectors
-        # (step 5 of the concept-saliency-maps algorithm in Brocki, 2019)
+        # Compute concept scores (Sc) for latent vectors
+        # (Step 5 of the concept-saliency-maps algorithm in Brocki, 2019.)
         
         if not os.path.exists(os.path.join(save_dir, 'concept_scores.pkl')):
             
@@ -600,7 +557,7 @@ def SALIENCY_MAP(config):
                 concept_scores = pickle.load(handle)
         
         ############################################################
-        # isolate row indices for image patches with top concept scores
+        # Isolate row indices for image patches with top concept scores
         
         if not os.path.exists(os.path.join(save_dir, 'top_scores.pkl')):    
             
@@ -636,7 +593,7 @@ def SALIENCY_MAP(config):
                 top_scores = pickle.load(handle)
         
         ############################################################
-        # assess separation between concept score distributions
+        # Assess separation between concept score distributions
         # for image patches with and without a given concept label
         
         print('Plotting concept score histograms...')
@@ -711,7 +668,7 @@ def SALIENCY_MAP(config):
         print()
 
         ############################################################
-        # create saliency maps with respect to concept vectors
+        # Create saliency maps with respect to concept vectors
         # for image patches with top concept scores
         
         input_layer = keras.Input(shape=(img_dims))
@@ -732,7 +689,7 @@ def SALIENCY_MAP(config):
                     
                     img = da.expand_dims(X_transform[img_idx], axis=0).compute()
 
-                    # for percentile gradient methods
+                    # For percentile gradient methods
                     if method in ['rectgrad', 'rectgradmod', 'rectgradprr']: 
  
                         attrs = de.explain(
@@ -757,13 +714,13 @@ def SALIENCY_MAP(config):
 
                     if config.masked_model:  # undo vignette mask
 
-                        # mask function is designed to be applied to all 
+                        # Mask function is designed to be applied to all 
                         # cells in a batch during model training. Slicing first 
                         # dimension in this case to apply to a single patch.
                         # img /= mask[0, :, :, :]
                         pass
                     
-                    # visualize attributions
+                    # Visualize attributions
                     fig = plt.figure(figsize=(13, 4.5))
                     
                     rows, cols = (4, 6)
@@ -799,7 +756,7 @@ def SALIENCY_MAP(config):
                         
                         overlay += channel_slice * to_rgb([1, 1, 1])
                                 
-                        # fluorescence image
+                        # Fluorescence image
                         ax1 = fig.add_subplot(inner_gs[0])
                         ax1.imshow(overlay)
                         ax1.set_title(
@@ -808,7 +765,7 @@ def SALIENCY_MAP(config):
                         )
                         ax1.axis('off')
 
-                        # attributions image
+                        # Attributions image
                         norm = TwoSlopeNorm(
                             vcenter=0, vmin=attrs_threshold_low, 
                             vmax=attrs_threshold_high
@@ -823,7 +780,7 @@ def SALIENCY_MAP(config):
 
                         if ch == len(config.tif_channels) - 1:  # on last channel
                             
-                            # add cbar
+                            # Add cbar
                             pos = ax2.get_position()
 
                             cbar_left = pos.x1 - 0.04
@@ -861,9 +818,10 @@ def SALIENCY_MAP(config):
                                     channel_slice = (
                                         channel_slice * X_intensity_multiplier
                                     )
+
                                     try:
                                         merge += channel_slice * to_rgb(
-                                            config.channel_colors[channel_name2][1]
+                                            config.channel_colors[channel_name2]
                                         )
                                     except KeyError:
                                         pass
@@ -877,10 +835,10 @@ def SALIENCY_MAP(config):
                             ax3.axis('off')
 
                     legend_elements = []
-                    for channel_name, (ch, color) in config.channel_colors.items():
+                    for name, color in config.channel_colors.items():
                         legend_elements.append(
                             Line2D([0], [0], color=color, lw=5, 
-                                   label=antibody_abbrs[channel_name])
+                                   label=antibody_abbrs[name])
                         )
                     fig.legend(
                         handles=legend_elements, prop={'size': 8},
@@ -900,5 +858,3 @@ def SALIENCY_MAP(config):
                         )
                     )
                     plt.close('all')
-
-        ############################################################
