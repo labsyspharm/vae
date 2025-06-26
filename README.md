@@ -5,22 +5,26 @@
 
 MORPHӔUS is Python-based software for morphology-aware classification of individual cells and multicellular tissue structures in whole-slide multiplex images of tissue using the variational autoencoder deep learning network architecture.
 
-## Installation
-If not already installed, download `conda` following the instructions provided [here](https://docs.anaconda.com/miniconda/).
+---
 
-Next, install MORPHӔUS into a dedicated Conda environment and activate it with the following commands:
+## Installation
+
+Install MORPHӔUS into a dedicated Conda environment and activate it with the following commands:
 ```bash
 conda create -n morphaeus -c conda-forge -c labsyspharm python=3 vae
 conda activate morphaeus
 ```
+If not already installed, download `conda` following the instructions provided [here](https://docs.anaconda.com/miniconda/).
+
+---
 
 ## Program Execution
-Find the `config.yml` file in the `vae` folder of the installed MORPHӔUS Conda environment and modify all applicable paths and configuration settings. Run the program with the following command:
+Make a copy of the `config.yml` file in the `vae` folder of the installed MORPHӔUS Conda environment and modify all applicable paths and configuration settings. Run the program with the following command:
 ```bash
 vae <path/to/config.yml>
 ```
 
-The pipeline supports progress bookmarking, which allows the program to pick up where it left off between runs. Users may also elect to re-run a particular module with the following:
+The pipeline supports progress bookmarking, allowing the program to pick up where it left off between runs. Users may also elect to re-run a particular module by adding the `--module` flag as follows:
 ```bash
 vae --module <MODULE_NAME> <path/to/config.yml>
 ```
@@ -34,12 +38,15 @@ Available modules:
 - `ENCODE_IMAGES`
 - `SALIENCY_MAP`
 
+Note: In order to re-run a module, the corresponding checkpoint file must be removed from the `checkpoints` folder in the output directory.
+
+---
+
 ## MORPHӔUS Source Code
 
 MORPHӔUS source code is freely-available for academic use and archived on Zenodo at [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10070212.svg)](https://doi.org/10.5281/zenodo.10070212)
 
 ---
-
 
 ## Funding Acknowledgments
 
