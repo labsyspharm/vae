@@ -38,8 +38,8 @@ from ..utils import (
 # To see specs for the resourced GPU(s): nvidia-smi
 
 # conda activate vae
-
-# module load gcc/9.2.0 python/3.10.11 cuda/12.1 
+# module load gcc/14.2.0 python/3.13.1 cuda/12.8
+# module load gcc/9.2.0 python/3.10.11 cuda/12.1 (OLD o2 version)
 # (compatible with tensorflow=2.15.0 and L40S, teslaX100, 
 #  RTX8000, A100, and maybe other GPUs)
 

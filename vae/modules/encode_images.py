@@ -671,7 +671,9 @@ def mse(patch_dims, X_transform, y, X_seg, X_decoded, X_decoded_reversed, mse_pe
     ]
 
     X_transform_outliers = X_transform[outlier_idxs]
-    y_outliers = y[outlier_idxs].reset_index(drop=True)
+
+    y.reset_index(drop=True, inplace=True)
+    y_outliers = y[outlier_idxs]
     X_outliers_seg = X_seg[outlier_idxs]
     X_decoded_reversed_outliers = X_decoded_reversed[outlier_idxs]
 
