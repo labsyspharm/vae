@@ -650,16 +650,18 @@ def mse(patch_dims, X_transform, y, X_seg, X_decoded, X_decoded_reversed, mse_pe
     errors = []
 
     for transformed_img, reconstructed_img in zip(X_transform, X_decoded):
+        
+        transformed = transformed_img.compute()
+        reconstructed = reconstructed_img.compute()
 
-        err = np.sum((transformed_img.compute() - reconstructed_img) ** 2)
-        err /= float(transformed_img.shape[0] * transformed_img.shape[1])
-
+        err = np.sum(transformed - reconstructed ** 2)
+        err /= float(transformed.shape[0] * transformed.shape[1])
+        
         errors.append(err)
 
     average_error = np.mean(errors)
-    print(f'average mean squared error is {average_error}')
-
-    n, bins, pathes = plt.hist(errors, bins=50)
+    print(f'average mean squared error is {average_error:.3f}')
+    n, bins, pathes = plt.hist(errors, bins=50, color='k', ec=None)
     plt.axvline(np.percentile(errors, mse_percentile_cutoff), c='r')
     plt.xlabel('Mean squared error')
     plt.ylabel('Count')
@@ -1274,57 +1276,57 @@ def ENCODE_IMAGES(config):
             chunk_size=chunk_size, intensity_multiplier=1.3
         )
 
-        # Plot latent vectors as their learned reconstructions
-        PlotLatentSpace(
-            reconstructions=True,
-            zoom=config.zoom,
-            X_encoded_embedded=X_encoded_embedded,
-            X_decoded_reversed=X_decoded_reversed,
-            y=None,
-            channel_color_dict=config.channel_colors,
-            scatter_point_size=config.scatter_point_size,
-            filename='patches',
-            save_dir=save_dir
-        )
+        # # Plot latent vectors as their learned reconstructions
+        # PlotLatentSpace(
+        #     reconstructions=True,
+        #     zoom=config.zoom,
+        #     X_encoded_embedded=X_encoded_embedded,
+        #     X_decoded_reversed=X_decoded_reversed,
+        #     y=None,
+        #     channel_color_dict=config.channel_colors,
+        #     scatter_point_size=config.scatter_point_size,
+        #     filename='patches',
+        #     save_dir=save_dir
+        # )
 
-        # Get input and output images of lassoed latent vectors for targeted analysis of vectors 
-        if config.lasso_vector_tool:
-            LassoVectors(
-                contrast_limits=contrast_limits,
-                patch_dims=patch_dims,
-                imgs_instead_of_points=False,
-                zoom=config.zoom,
-                X=X,
-                X_seg=X_seg,
-                X_encoded=X_encoded,
-                X_encoded_embedded=X_encoded_embedded,
-                X_decoded_reversed=X_decoded_reversed,
-                y=labels_list['sample'],
-                numColumns=10,
-                intensity_multiplier=1.1,
-                tif_channels=config.tif_channels,
-                channel_color_dict=config.channel_colors,
-                max_examples=1000,
-                patch_font_size=3.0,
-                save_dir=save_dir
-            )
+        # # Get input and output images of lassoed latent vectors for targeted analysis of vectors 
+        # if config.lasso_vector_tool:
+        #     LassoVectors(
+        #         contrast_limits=contrast_limits,
+        #         patch_dims=patch_dims,
+        #         imgs_instead_of_points=False,
+        #         zoom=config.zoom,
+        #         X=X,
+        #         X_seg=X_seg,
+        #         X_encoded=X_encoded,
+        #         X_encoded_embedded=X_encoded_embedded,
+        #         X_decoded_reversed=X_decoded_reversed,
+        #         y=labels_list['sample'],
+        #         numColumns=10,
+        #         intensity_multiplier=1.1,
+        #         tif_channels=config.tif_channels,
+        #         channel_color_dict=config.channel_colors,
+        #         max_examples=1000,
+        #         patch_font_size=3.0,
+        #         save_dir=save_dir
+        #     )
 
-        # Plot learned reconstructions of input image patches
-        PlotReconstructedImages(
-            patch_dims=patch_dims,
-            X=X,
-            y=labels_list['sample'][0:100],
-            X_seg=X_seg,
-            X_decoded_reversed=X_decoded_reversed,
-            contrast_limits=contrast_limits,
-            numColumns=10,
-            tif_channels=config.tif_channels,
-            channel_color_dict=config.channel_colors,
-            intensity_multiplier=1.1,
-            patch_font_size=3.0,
-            filename='learned_reconstructions',
-            save_dir=save_dir
-        )
+        # # Plot learned reconstructions of input image patches
+        # PlotReconstructedImages(
+        #     patch_dims=patch_dims,
+        #     X=X,
+        #     y=labels_list['sample'][0:100],
+        #     X_seg=X_seg,
+        #     X_decoded_reversed=X_decoded_reversed,
+        #     contrast_limits=contrast_limits,
+        #     numColumns=10,
+        #     tif_channels=config.tif_channels,
+        #     channel_color_dict=config.channel_colors,
+        #     intensity_multiplier=1.1,
+        #     patch_font_size=3.0,
+        #     filename='learned_reconstructions',
+        #     save_dir=save_dir
+        # )
            
         # Compute mean squared error between input image patches and their learned reconstructions
         (average_error,
