@@ -3,7 +3,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-MORPHӔUS is Python-based software for morphology-aware classification of individual cells and multicellular tissue structures in whole-slide multiplex images of tissue using the variational autoencoder deep learning network architecture.
+MORPHӔUS is Python-based software for morphology-aware classification of single cells and multicellular tissue structures in whole-slide multiplex images of tissue using the variational autoencoder deep learning network architecture.
 
 ---
 
@@ -14,7 +14,8 @@ Install MORPHӔUS into a dedicated Conda environment and activate it with the fo
 conda create -n morphaeus -c conda-forge -c labsyspharm python=3 vae
 conda activate morphaeus
 ```
-If not already installed, download `conda` following the instructions provided [here](https://docs.anaconda.com/miniconda/).
+
+If conda is not already installed, you can download it by following the instructions provided [here](https://docs.anaconda.com/miniconda/).
 
 ---
 
@@ -24,7 +25,7 @@ Make a copy of the `config.yml` file in the `vae` folder of the installed MORPH�
 vae <path/to/config.yml>
 ```
 
-The pipeline supports progress bookmarking, allowing the program to pick up where it left off between runs. Users may also elect to re-run a particular module by adding the `--module` flag as follows:
+The pipeline supports progress bookmarking, allowing the program to pick up where it left off between runs. Users may elect to re-run a particular module by adding the `--module` flag as follows:
 ```bash
 vae --module <MODULE_NAME> <path/to/config.yml>
 ```
@@ -44,7 +45,9 @@ Note: In order to re-run a module, the corresponding checkpoint file must be rem
 
 ## MORPHӔUS Source Code
 
-MORPHӔUS source code is freely-available for academic use and archived on Zenodo at [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10070212.svg)](https://doi.org/10.5281/zenodo.10070212)
+MORPHӔUS source code is freely-available for academic use and archived on Zenodo. 
+
+<!-- at [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10070212.svg)](https://doi.org/10.5281/zenodo.10070212) -->
 
 ---
 
@@ -56,4 +59,4 @@ This work was supported by Ludwig Cancer Research and the Ludwig Center at Harva
 
 ## References
 
-<a id="1">[1]</a> Baker GJ., Novikov E. et al. Morphology-Aware Profiling of Highly Multiplexed Tissue Images using Variational Autoencoders. **bioRxiv** (2025) https://doi.org/10.1101/2023.11.01.565120
+Baker GJ., Novikov E. et al. Morphology-Aware Profiling of Highly Multiplexed Tissue Images using Variational Autoencoders. **bioRxiv** (2025) https://doi.org/10.1101/2025.06.23.661064
