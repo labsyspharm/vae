@@ -154,7 +154,7 @@ def GENERATE_IMAGE_GALLERY(config):
         contrast_limits = yaml.safe_load(open(config.contrast_path))
 
         # Ensure keys in config.tif_channel order
-        contrast_limits = {k: contrast_limits[k] for k in config.tif_channels} 
+        contrast_limits = {k: contrast_limits[k] for k in config.tif_channels}
 
         # Pull random patches from training data to check quality
         patch_ids = np.random.RandomState(1).choice(

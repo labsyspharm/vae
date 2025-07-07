@@ -89,7 +89,7 @@ def RUN_CELLCUTTER(config):
                 elif line.endswith('_seg\n'):
                     processed_samples_seg.add(line.strip())
 
-    for name in ['train', 'test', 'validate']:
+    for name in ['train', 'test', 'validate']:  
 
         X_combo = None
         X_combo_seg = None
