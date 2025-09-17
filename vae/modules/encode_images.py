@@ -131,25 +131,35 @@ def PlotLatentSpace(reconstructions, zoom, X_encoded_embedded, X_decoded_reverse
     if reconstructions:
         
         ScatterReconstructions(
-            X_decoded=X_decoded_reversed, X_encoded_embedded=X_encoded_embedded, zoom=zoom, ax=ax
+            X_decoded=X_decoded_reversed, 
+            X_encoded_embedded=X_encoded_embedded, 
+            zoom=zoom, ax=ax
         )
 
         legend_elements = []
         for name, color in channel_color_dict.items():
-            legend_elements.append(Line2D([0], [0], color=color, lw=6, label=name))
+            legend_elements.append(
+                Line2D([0], [0], color=color,
+                       lw=6, label=name)
+                )
 
         ax.scatter(
             X_encoded_embedded[:, 0], X_encoded_embedded[:, 1], 
             c='k', s=0.0, ec='k', lw=0.25, zorder=4
         )
         
-        bbox = ax.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
+        bbox = ax.get_window_extent().transformed(
+            fig.dpi_scale_trans.inverted()
+            )
         num_legend_columns(bbox=bbox, ax=ax, legend_elements=legend_elements)
 
         ax.set_aspect('equal', adjustable='box')
         plt.grid(False)
         
-        plt.savefig(os.path.join(save_dir, f'{filename}.png'), dpi=600, bbox_inches='tight')
+        plt.savefig(
+            os.path.join(save_dir, f'{filename}.png'), 
+            dpi=600, bbox_inches='tight'
+        )
         plt.close('all')
 
     else:
@@ -210,37 +220,45 @@ def PlotLatentSpace(reconstructions, zoom, X_encoded_embedded, X_decoded_reverse
         return label_color_dict
 
 
-def DecodeVectors(decoder, X_encoded, X, X_seg, sample_labels, bkgd_limits, contrast_limits, channel_color_dict, tif_channels, patch_dims, mask, chunk_size, intensity_multiplier):
+def DecodeVectors(config, decoder, X_encoded, X, X_seg, sample_labels, bkgd_limits, contrast_limits, channel_color_dict, tif_channels, patch_dims, mask, chunk_size, intensity_multiplier):
     
     # Decode latent vector
     print('Decoding images...')
     X_decoded = decoder.predict(X_encoded, batch_size=200)
     X_decoded = da.from_array(
-        X_decoded, chunks=(chunk_size, patch_dims[0], patch_dims[1], patch_dims[2])
+        X_decoded, chunks=(chunk_size, patch_dims[0], 
+                           patch_dims[1], patch_dims[2])
     )
 
     X_decoded_reversed = da.map_blocks(
         reverse_processing, X_decoded, X, sample_labels,
         bkgd_limits, contrast_limits, mask,
         dtype=np.float32  
-        # dtype parameter required to avoid ValueError: dtype inference failed in map_blocks
+        # dtype parameter required to avoid 
+        # ValueError: dtype inference failed in map_blocks
     )  # Call .compute() to debug
 
     # Slice out channels to visualize
-    channel_indices = np.array([tif_channels.index(i) for i in channel_color_dict.keys()])
+    channel_indices = np.array(
+            [tif_channels.index(i) for i in channel_color_dict.keys()]
+    )
     X_decoded_reversed = X_decoded_reversed[:, :, :, channel_indices]
 
-    # Convert to RGB, brighten, and colorize
-    X_decoded_reversed = gray2rgb(X_decoded_reversed)
-    X_decoded_reversed *= intensity_multiplier
-    color_arr = np.array(
-        [to_rgb(color) for _, color in channel_color_dict.items()]
-    ).reshape(1, 1, -1, 3)
-    X_decoded_reversed *= color_arr
+    # for RGB images
+    if config.RGB:
+        pass
+    else:
+        # Convert to RGB, brighten, and colorize
+        X_decoded_reversed = gray2rgb(X_decoded_reversed)
+        X_decoded_reversed *= intensity_multiplier
+        color_arr = np.array(
+            [to_rgb(color) for _, color in channel_color_dict.items()]
+        ).reshape(1, 1, -1, 3)
+        X_decoded_reversed *= color_arr
 
-    # Sum images along channels axis to generate final RGB image patch
-    X_decoded_reversed = np.sum(X_decoded_reversed, axis=3)
-    X_decoded_reversed = np.clip(X_decoded_reversed, 0, 1)
+        # Sum images along channels axis to generate final RGB image patch
+        X_decoded_reversed = np.sum(X_decoded_reversed, axis=3)
+        X_decoded_reversed = np.clip(X_decoded_reversed, 0, 1)
 
     # Rechunk reverse processed image patches
     X_decoded_reversed = da.rechunk(
@@ -524,13 +542,15 @@ def LassoVectors(contrast_limits, patch_dims, imgs_instead_of_points, zoom, X, X
     plt.close('all')
 
 
-def PlotReconstructedImages(patch_dims, X, y, X_seg, X_decoded_reversed, contrast_limits, numColumns, tif_channels, channel_color_dict, intensity_multiplier, patch_font_size, filename, save_dir):
+def PlotReconstructedImages(config, patch_dims, X, y, X_seg, X_decoded_reversed, contrast_limits, numColumns, tif_channels, channel_color_dict, intensity_multiplier, patch_font_size, filename, save_dir):
 
     selected_labels = pd.DataFrame(data={'label': y})
 
     # Sort selected labels
     selected_labels.sort_values(by='label', inplace=True)
-    # selected_labels.sort_index(inplace=True)  # sort by row index for efficient indexing
+
+    # sort by row index for efficient indexing
+    # selected_labels.sort_index(inplace=True)  
 
     selected_labels.reset_index(drop=True, inplace=True)
 
@@ -546,12 +566,16 @@ def PlotReconstructedImages(patch_dims, X, y, X_seg, X_decoded_reversed, contras
     fig = plt.figure()
 
     fig.text(0.13, 0.97, 'Input Images', ha='left', fontsize='medium')
-    fig.text(0.53, 0.97, 'Learned Reconstructions', ha='left', fontsize='medium')
+    fig.text(
+        0.53, 0.97, 'Learned Reconstructions', ha='left', fontsize='medium'
+    )
 
     outer_grid_rows = 1
     outer_grid_cols = 2
 
-    outer = gridspec.GridSpec(outer_grid_rows, outer_grid_cols, wspace=0.1, hspace=0.0)
+    outer = gridspec.GridSpec(
+        outer_grid_rows, outer_grid_cols, wspace=0.1, hspace=0.0
+    )
 
     for panel in range(outer_grid_rows * outer_grid_cols):
 
@@ -583,7 +607,7 @@ def PlotReconstructedImages(patch_dims, X, y, X_seg, X_decoded_reversed, contras
             patch_height, patch_width = (X[0].shape[0], X[0].shape[0])
             centroid_layer = np.zeros((patch_height, patch_width, 4))  # RGBA
             cy, cx = int(patch_height / 2), int(patch_width / 2)
-            centroid_layer[cy, cx, :3] = [1, 1, 1]  # color the full RGB array white
+            centroid_layer[cy, cx, :3] = [1, 1, 1]  # color full RGB white
             centroid_layer[cy, cx, 3] = 1  # only show the centroid value (>0) 
 
             if panel == 0:
@@ -605,32 +629,43 @@ def PlotReconstructedImages(patch_dims, X, y, X_seg, X_decoded_reversed, contras
                     [tif_channels.index(i) for i in channel_color_dict.keys()]
                 )
                 input_img = input_img[:, :, channel_indices]
+                
+                # for RGB images
+                if config.RGB:
+                    overlay = input_img
+                else:
+                    # Convert to RGB, brighten, and colorize
+                    input_img = gray2rgb(input_img)
+                    input_img *= intensity_multiplier
+                    color_arr = np.array(
+                        [to_rgb(color) for _, color in 
+                         channel_color_dict.items()]
+                    ).reshape(1, 1, -1, 3)
+                    input_img *= color_arr
 
-                # Convert to RGB, brighten, and colorize
-                input_img = gray2rgb(input_img)
-                input_img *= intensity_multiplier
-                color_arr = np.array(
-                    [to_rgb(color) for _, color in channel_color_dict.items()]
-                ).reshape(1, 1, -1, 3)
-                input_img *= color_arr
-
-                # Sum images along channels axis to generate final RGB image patch
-                overlay = np.sum(input_img, axis=2)
-                overlay = np.clip(overlay, 0, 1)
+                    # Sum images along channels axis to generate 
+                    # final RGB image patch
+                    overlay = np.sum(input_img, axis=2)
+                    overlay = np.clip(overlay, 0, 1)
 
             elif panel == 1:
 
-                # RGB overlay for learned reconstructions are generated in DecodeVectors() 
+                # RGB overlay for learned reconstructions are generated
+                # in DecodeVectors() 
                 overlay = X_decoded_reversed[e]
-
+            
             ax.imshow(overlay)
             ax.imshow(seg_rgb, alpha=0.4)
             ax.imshow(centroid_layer)
 
-            # ax.set_xlabel(label['label'], fontsize=patch_font_size, labelpad=0.75)
+            # ax.set_xlabel(
+            #         label['label'], fontsize=patch_font_size, labelpad=0.75
+            # )
             fig.add_subplot(ax)
 
-    fig.subplots_adjust(bottom=0.01, top=0.94, left=0.01, right=0.85, wspace=0.2, hspace=0.1)
+    fig.subplots_adjust(
+        bottom=0.01, top=0.94, left=0.01, right=0.85, wspace=0.2, hspace=0.1
+    )
 
     legend_elements = []
     for name, color in channel_color_dict.items():
@@ -641,7 +676,9 @@ def PlotReconstructedImages(patch_dims, X, y, X_seg, X_decoded_reversed, contras
 
     plt.tight_layout()
 
-    plt.savefig(os.path.join(save_dir, f'{filename}.png'), dpi=800, bbox_inches='tight')
+    plt.savefig(
+        os.path.join(save_dir, f'{filename}.png'), dpi=800, bbox_inches='tight'
+    )
     plt.close('all')
 
 
@@ -871,7 +908,7 @@ def ENCODE_IMAGES(config):
     if not os.path.isfile(
        os.path.join(config.output_path, 'checkpoints/ENCODE_IMAGES.txt')):
         
-        ###########################################################################
+        #######################################################################
         # I/O
         
         rng = np.random.default_rng(237)
@@ -915,7 +952,7 @@ def ENCODE_IMAGES(config):
             print('Decoder not found.')
             sys.exit()
 
-        ###########################################################################
+        #######################################################################
         # Generate combined training, validation, and test image patch zarrs
         
         chunk_size = 200
@@ -956,9 +993,10 @@ def ENCODE_IMAGES(config):
             store = zarr.ZipStore(z1_test_path, mode='r')
             X_test = zarr.open(store=store)
 
-            # Initialize combo zarr to store combined training, validation, and test data.
-            # (Cellcutter cuts at 1 cell per chunk for efficient indexing during model training
-            # with shuffling, which requires random-access indexing. Rechunking the number of cells
+            # Initialize combo zarr to store combined training, validation, 
+            # and test data. Cellcutter cuts at 1 cell per chunk for efficient
+            # indexing during model training with shuffling, which requires
+            # random-access indexing. Rechunking the number of cells
             # per chunk here for efficient image patch encoding.)
             X_combo = zarr.open(
                 combo_dir,
@@ -1007,7 +1045,8 @@ def ENCODE_IMAGES(config):
             store = zarr.ZipStore(z1_test_path_seg, mode='r')
             X_test_seg = zarr.open(store=store)
 
-            # Initialize combo zarr to store combined training, validation, and test data
+            # Initialize combo zarr to store combined training, validation, 
+            # and test data
             X_combo_seg = zarr.open(
                 combo_dir_seg,
                 mode='w',
@@ -1026,7 +1065,7 @@ def ENCODE_IMAGES(config):
             X_combo_seg.append(X_validate_seg, axis=1)
             X_combo_seg.append(X_test_seg, axis=1)
         
-        ###########################################################################
+        #######################################################################
         # Sample image patch data
 
         # Read combined patches
@@ -1045,7 +1084,8 @@ def ENCODE_IMAGES(config):
 
         # Read validation labels
         y_validate = pd.read_csv(
-            os.path.join(config.output_path, '1_cellcutter_input/validate_qc.csv')
+            os.path.join(config.output_path, 
+                         '1_cellcutter_input/validate_qc.csv')
         )
 
         # Read test labels
@@ -1059,9 +1099,12 @@ def ENCODE_IMAGES(config):
 
         if not config.cluster_full_dataset:
             
-            idxs = rng.choice(X.shape[0], size=config.clustering_sample_size, replace=False)
+            idxs = rng.choice(
+                X.shape[0], size=config.clustering_sample_size, replace=False
+            )
             
-            # Slicing can change the original chunk size, ensure equivalent chunk sizes between
+            # Slicing can change the original chunk size, ensure equivalent 
+            # chunk sizes between
             # filtered X and sample_labels in da.map_blocks by 
             # explicitly rechunking axis0 (number of cells)
             chunk0 = X.chunksize[0]
@@ -1070,12 +1113,30 @@ def ENCODE_IMAGES(config):
             
             y = y.iloc[idxs].copy()
 
-        ###########################################################################
-        # Preprocess image patch data
+        ########
+        # LEIDEN PATCHES
+        # patches = pd.read_csv(
+        #     '/Users/bakergr/Desktop/chen/VAE10/'
+        #     '7_latent_space_LD1404/leiden-patches.csv'
+        # )
+        # patches = pd.read_csv(
+        #     '/Users/bakergr/Desktop/gibbs/VAE14_VIG21/'
+        #     '7_latent_space_LD2822/leiden-patches.csv'
+        # )
+
+        # import pdb; pdb.set_trace()
+        # filt = y[y['CellID'].isin(patches['CellID'])]
+        # filt['CellID'] = pd.Categorical(
+        #     filt['CellID'], categories=patches['CellID'], ordered=True
+        # )
+        # filt_sorted = filt.sort_values('CellID')
+        # X = X[filt_sorted.index].rechunk({0: chunk0})
+        # y = filt_sorted.reset_index(drop=True)
         
-        mask, vmin, vmax = compute_vignette_mask(
-            window_size=config.window_size, std_dev=config.mask_std_dev
-        )
+        ########
+        
+        #######################################################################
+        # Preprocess image patch data
 
         # X_transform = X.astype('float')  # use for binary patches
 
@@ -1088,15 +1149,21 @@ def ENCODE_IMAGES(config):
         X_transform = da.map_blocks(
             remove_background, X, sample_labels, bkgd_limits, 
             dtype=np.float32  
-            # dtype is required to avoid ValueError: dtype inference failed in map_blocks
+            # dtype is required to avoid ValueError: dtype inference failed
+            # in map_blocks
         )
 
         if config.masked_model:
+            mask, vmin, vmax = compute_vignette_mask(
+                window_size=config.window_size, std_dev=config.mask_std_dev
+            )
             print('Applying Gaussian vignette mask')
             print()
             X_transform *= mask
+        else:
+            mask = None
 
-        ###########################################################################
+        #######################################################################
         # Encode images
         
         if config.cluster_full_dataset:
@@ -1122,7 +1189,9 @@ def ENCODE_IMAGES(config):
             temp = pd.DataFrame(X_encoded)
             temp.columns = [f'vae_{i}' for i in temp.columns]
             x_encoded_df = pd.concat(
-                [y['CellID'].reset_index(drop=True), pd.DataFrame(temp)], axis=1)
+                [y['CellID'].reset_index(drop=True), pd.DataFrame(temp)], 
+                axis=1
+            )
             x_encoded_df.to_parquet(
                 os.path.join(
                     save_dir, 
@@ -1130,11 +1199,12 @@ def ENCODE_IMAGES(config):
                 index=False
             )
 
-        ###########################################################################
+        #######################################################################
         # Embed latent vectors
         
         if (config.latent_dimension > 2):
-            embedding_path = os.path.join(save_dir, f'embedding_{num_cells}.npy')
+            embedding_path = os.path.join(save_dir, 
+                                          f'embedding_{num_cells}.npy')
             
             try:
                 # Load previously saved embedding
@@ -1166,7 +1236,7 @@ def ENCODE_IMAGES(config):
                         output_metric='euclidean',
                         min_dist=0.1,
                         repulsion_strength=3,
-                        random_state=1,
+                        random_state=None,  # random_state=1
                         n_epochs=1000,
                         init='spectral',
                         metric='euclidean',
@@ -1198,16 +1268,22 @@ def ENCODE_IMAGES(config):
                         disconnection_distance=None,
                         output_dens=False).fit_transform(X_encoded)
 
-                    print('Embedding completed in ' + str(datetime.now() - startTime))
+                    print(
+                        'Embedding completed in ' + 
+                        str(datetime.now() - startTime)
+                    )
 
                 # Save embedding
-                np.save(os.path.join(save_dir, f'embedding_{num_cells}'), X_encoded_embedded)
+                np.save(
+                    os.path.join(save_dir, f'embedding_{num_cells}'), 
+                    X_encoded_embedded
+                )
 
         else:
             # Just assign the 2D X_encoded to the variable X_encoded_embedded
             X_encoded_embedded = X_encoded.copy()
 
-        ###########################################################################
+        #######################################################################
         # Cluster VAE encodings in embedding space with HDBSCAN
         
         print(f'Minimum_cluster_size is {config.hdbscan_min_cluster_size}')
@@ -1224,12 +1300,14 @@ def ENCODE_IMAGES(config):
             prediction_data=False,
             match_reference_implementation=False).fit(X_encoded_embedded)
         print(np.unique(clustering.labels_))
-        np.save(os.path.join(save_dir, 'hdbscan_labels.npy'), clustering.labels_)
+        np.save(
+            os.path.join(save_dir, 'hdbscan_labels.npy'), clustering.labels_
+        )
         print()
 
-        ###########################################################################
+        #######################################################################
         # Plot VAE encodings in embedding space colored by various labels
-        
+
         labels_list = {
             'cylinter': y[config.cluster_column],
             'hdbscan': pd.Series(clustering.labels_), 
@@ -1237,6 +1315,11 @@ def ENCODE_IMAGES(config):
             'condition': y['Condition']
         }
         
+        #########
+        # LEIDEN
+        # labels_list['leiden'] = patches['Cluster']
+        #########
+
         try:
             leiden_clusters = pd.read_csv(
                 os.path.join(save_dir, f'encodings_{num_cells}-patches.csv')
@@ -1264,11 +1347,12 @@ def ENCODE_IMAGES(config):
                 save_dir=save_dir
             )
 
-        ###########################################################################
+        #######################################################################
         # Decode latent vectors to visualize learned reconstructions
 
         X_decoded, X_decoded_reversed = DecodeVectors(
-            decoder=decoder, X_encoded=X_encoded, X=X, X_seg=X_seg, sample_labels=sample_labels,
+            config=config, decoder=decoder, X_encoded=X_encoded, X=X, 
+            X_seg=X_seg, sample_labels=sample_labels,
             bkgd_limits=bkgd_limits, contrast_limits=contrast_limits,
             channel_color_dict=config.channel_colors,
             tif_channels=config.tif_channels,
@@ -1289,7 +1373,8 @@ def ENCODE_IMAGES(config):
             save_dir=save_dir
         )
 
-        # Get input and output images of lassoed latent vectors for targeted analysis of vectors 
+        # Get input and output images of lassoed latent vectors for 
+        # targeted analysis of vectors 
         if config.lasso_vector_tool:
             LassoVectors(
                 contrast_limits=contrast_limits,
@@ -1303,7 +1388,7 @@ def ENCODE_IMAGES(config):
                 X_decoded_reversed=X_decoded_reversed,
                 y=labels_list['sample'],
                 numColumns=10,
-                intensity_multiplier=1.1,
+                intensity_multiplier=1.0,
                 tif_channels=config.tif_channels,
                 channel_color_dict=config.channel_colors,
                 max_examples=1000,
@@ -1313,6 +1398,7 @@ def ENCODE_IMAGES(config):
 
         # Plot learned reconstructions of input image patches
         PlotReconstructedImages(
+            config=config,
             patch_dims=patch_dims,
             X=X,
             y=labels_list['sample'][0:100],
@@ -1322,13 +1408,14 @@ def ENCODE_IMAGES(config):
             numColumns=10,
             tif_channels=config.tif_channels,
             channel_color_dict=config.channel_colors,
-            intensity_multiplier=1.1,
+            intensity_multiplier=1.0,
             patch_font_size=3.0,
             filename='learned_reconstructions',
             save_dir=save_dir
         )
            
-        # Compute mean squared error between input image patches and their learned reconstructions
+        # Compute mean squared error between input image patches and their 
+        # learned reconstructions
         (average_error,
          errors,
          X_transform_outliers,
@@ -1348,8 +1435,10 @@ def ENCODE_IMAGES(config):
             save_dir=save_dir
         )
 
-        # Visualize input image patches associated with poor learned reconstructions
+        # Visualize input image patches associated with poor 
+        # learned reconstructions
         PlotReconstructedImages(
+            config=config,
             patch_dims=patch_dims,
             X=X_transform_outliers,
             y=y_outliers,
@@ -1359,7 +1448,7 @@ def ENCODE_IMAGES(config):
             numColumns=10,
             tif_channels=config.tif_channels,
             channel_color_dict=config.channel_colors,
-            intensity_multiplier=1.1,
+            intensity_multiplier=1.0,
             patch_font_size=3.0,
             filename='outliers',
             save_dir=save_dir
@@ -1378,7 +1467,7 @@ def ENCODE_IMAGES(config):
                 frac_of_scatter_points=1.0,
                 scatter_point_size=config.scatter_point_size,
                 make_sample_sizes_equal=False,
-                img_brightness_multiplier=1.2,
+                img_brightness_multiplier=1.0,
                 scatter_point_alpha=1.0,
                 tif_channels=config.tif_channels,
                 save_dir=save_dir

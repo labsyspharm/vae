@@ -136,6 +136,28 @@ def RUN_CELLCUTTER(config):
             temp_csv.close()
             group.to_csv(temp_csv_path, index=False)
             
+            # Handle file paths for single and multi-tissue use cases
+            if os.path.exists(os.path.join(config.tif_path, f"{sample}.ome.tif")):
+                # Multi-tissue input
+                tif_path = os.path.join(config.tif_path, f"{sample}.ome.tif")
+            else:
+                # Single-tissue input
+                tif_path = config.tif_path
+
+            if os.path.exists(os.path.join(config.mask_path, f"{sample}.ome.tif")):
+                # Multi-tissue input
+                mask_path = os.path.join(config.mask_path, f"{sample}.ome.tif")
+            else:
+                # Single-tissue input
+                mask_path = config.mask_path
+            
+            if os.path.exists(os.path.join(config.outlines_path, f"{sample}.ome.tif")):
+                # Multi-tissue input
+                outlines_path = os.path.join(config.outlines_path, f"{sample}.ome.tif")
+            else:
+                # Single-tissue input
+                outlines_path = config.outlines_path
+            
             ###################################################################
             
             # Run cellcutter if sample was not already processed for patches
@@ -144,29 +166,7 @@ def RUN_CELLCUTTER(config):
             if checkpoint_key_patches not in processed_samples_patches:
 
                 logger.info(f'Cutting data for {checkpoint_key_patches}...')
-                print()  
-
-                # Handle file paths for single and multi-tissue use cases
-                if os.path.exists(os.path.join(config.tif_path, f"{sample}.ome.tif")):
-                    # Multi-tissue input
-                    tif_path = os.path.join(config.tif_path, f"{sample}.ome.tif")
-                else:
-                    # Single-tissue input
-                    tif_path = config.tif_path
-    
-                if os.path.exists(os.path.join(config.mask_path, f"{sample}.ome.tif")):
-                    # Multi-tissue input
-                    mask_path = os.path.join(config.mask_path, f"{sample}.ome.tif")
-                else:
-                    # Single-tissue input
-                    mask_path = config.mask_path
-                
-                if os.path.exists(os.path.join(config.outlines_path, f"{sample}.ome.tif")):
-                    # Multi-tissue input
-                    outlines_path = os.path.join(config.outlines_path, f"{sample}.ome.tif")
-                else:
-                    # Single-tissue input
-                    outlines_path = config.outlines_path
+                print()
 
                 # Check pixel size of image
                 ome = ome_types.from_tiff(tif_path)
@@ -196,7 +196,6 @@ def RUN_CELLCUTTER(config):
                     channels_to_cut = (
                         marker_channel_numbers + [str(num_tif_channels + 1)]
                     )
-
                 # Run cellcutter to generate image patches
                 run(
                     ["cut_cells", "-z", "-f", 

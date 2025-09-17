@@ -13,6 +13,7 @@ class Config:
         with open(path) as f:
             data = yaml.safe_load(f)
         config.output_path = pathlib.Path(data['output_path']).resolve()
+        config.RGB = bool(data['RGB'])
         config.csv_path = pathlib.Path(data['csv_path']).resolve()
         config.cluster_column = data['cluster_column']
         config.tif_path = pathlib.Path(data['tif_path']).resolve()

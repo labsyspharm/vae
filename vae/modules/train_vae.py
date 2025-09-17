@@ -36,6 +36,7 @@ from ..utils import (
 
 # To see specs for node: scontrol show node compute-gc-17-152 
 # To see specs for the resourced GPU(s): nvidia-smi
+# To check health of selected GPU(s): nvidia-smi -q -d ECC
 
 # conda activate vae
 # module load gcc/14.2.0 python/3.13.1 cuda/12.8
@@ -386,6 +387,12 @@ def TRAIN_VAE(config):
         )
         store = zarr.ZipStore(z1_train_path, mode='r')
         X_train = zarr.open(store=store)
+
+        arr = da.from_zarr(X_train).rechunk((3,1,40,40))
+        store = zarr.MemoryStore()
+        arr.to_zarr(store, overwrite=True)
+        X_train = zarr.open(store, mode="r")
+        
         # Optional subsample:
         # X_train = X_train[:, 0:1000, :, :]
         # X_train = zarr.array(
@@ -399,6 +406,12 @@ def TRAIN_VAE(config):
         )
         store = zarr.ZipStore(z1_validate_path, mode='r')
         X_valid = zarr.open(store=store)
+
+        arr = da.from_zarr(X_valid).rechunk((3,1,40,40))
+        store = zarr.MemoryStore()
+        arr.to_zarr(store, overwrite=True)
+        X_valid = zarr.open(store, mode="r")
+        
         # Optional subsample:
         # X_valid = X_valid[:, 0:1000, :, :]
         # X_valid = zarr.array(

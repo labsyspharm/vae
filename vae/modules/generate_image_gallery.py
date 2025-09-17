@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 # log_banner(logger.info, 'Boolean classifications')
 
 
-def PlotInputImgs(numExamples, numColumns, imgs, seg, intensity_multiplier, labels, fontSize, tif_channels, channel_color_dict, fileName, cluster_column, contrast_limits, save_dir):
+def PlotInputImgs(config, numExamples, numColumns, imgs, seg, intensity_multiplier, labels, fontSize, tif_channels, channel_color_dict, fileName, cluster_column, contrast_limits, save_dir):
 
     numRows = math.ceil(numExamples / numColumns)
     grid_dims = (numRows, numColumns)
@@ -73,27 +73,31 @@ def PlotInputImgs(numExamples, numColumns, imgs, seg, intensity_multiplier, labe
         centroid_layer[cy, cx, :3] = [1, 1, 1]  # color the full RGB array white
         centroid_layer[cy, cx, 3] = 1  # only show the centroid value (>0)
 
-        # Convert to RGB, brighten, and colorize
-        input_img = gray2rgb(input_img)
-        input_img *= intensity_multiplier
-        color_arr = np.array(
-            [to_rgb(color) for _, color in channel_color_dict.items()]
-        ).reshape(-1, 1, 1, 3)
-        input_img *= color_arr
+        # for RGB images
+        if config.RGB:
+            overlay = np.transpose(input_img, (1, 2, 0))
+            plt.imshow(overlay)
+        else:
+            # Convert to RGB, brighten, and colorize
+            input_img = gray2rgb(input_img)
+            input_img *= intensity_multiplier
+            color_arr = np.array(
+                [to_rgb(color) for _, color in channel_color_dict.items()]
+            ).reshape(-1, 1, 1, 3)
+            input_img *= color_arr
 
-        # Sum images along channels axis to generate final RGB image patch
-        overlay = np.sum(input_img, axis=0)
-        overlay = np.clip(overlay, 0, 1)
+            # Sum images along channels axis to generate final RGB image patch
+            overlay = np.sum(input_img, axis=0)
+            overlay = np.clip(overlay, 0, 1)
+            plt.imshow(overlay, cmap=plt.cm.binary)
         
         for name, color in channel_color_dict.items():
 
             custom_lines.append(Line2D([0], [0], color=color, lw=5))
 
         label = data[cluster_column]
-        
-        overlay = np.clip(overlay, 0, 1)
-        plt.imshow(overlay, cmap=plt.cm.binary)
-        plt.imshow(seg_rgb, alpha=0.4)
+
+        # plt.imshow(seg_rgb, alpha=0.4)
         plt.imshow(centroid_layer)
         plt.xlabel(label, size=fontSize, labelpad=1.5)
 
@@ -163,18 +167,19 @@ def GENERATE_IMAGE_GALLERY(config):
 
         imgs = z.get_orthogonal_selection((slice(None), patch_ids))
         seg = z_seg.get_orthogonal_selection((slice(None), patch_ids))
-        
+
         labels = csv.iloc[patch_ids].copy()
         labels.reset_index(drop=True, inplace=True)
         if config.cluster_column:
             labels.sort_values(by=config.cluster_column, inplace=True)
 
         PlotInputImgs(
+            config=config,
             numExamples=config.gallery_size,
             numColumns=20,
             imgs=imgs,
             seg=seg,
-            intensity_multiplier=1.1,
+            intensity_multiplier=1.0,
             labels=labels,
             fontSize=2,
             tif_channels=config.tif_channels,
