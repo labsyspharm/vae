@@ -1,0 +1,10 @@
+name: morphaeus
+channels:
+  - defaults
+  - conda-forge
+  - labsyspharm
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+    - tensorflow==2.15.0

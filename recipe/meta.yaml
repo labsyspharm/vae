@@ -1,5 +1,5 @@
 {% set name = "vae" %}
-{% set version = "0.0.6" %}
+{% set version = "0.0.7" %}
 
 package:
   name: "{{ name|lower }}"
@@ -23,11 +23,14 @@ build:
 
 requirements:
   build:
-    - poetry
-  host:
-    - pip
     - python
-    - poetry
+    - pip
+    - setuptools
+    - wheel
+  host:
+    - python
+    - pip
+    - "poetry-core>=1.4,<1.7"  # import os bug in recent version of poetry-core
   run:
     - python
     - hdbscan
@@ -44,6 +47,7 @@ requirements:
     - tensorflow-probability=0.23.0  # compatible with TF 2.15.0
     - "zarr<3.0.0"
     - opencv
+    - pyqt==5.15.11  # ensuring PyQT5 used by opencv
     - dask
     - ome-types
     - pytorch # used for Pytorch segmentation models 

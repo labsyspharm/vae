@@ -25,6 +25,7 @@ class Config:
         config.contrast_path = pathlib.Path(data['contrast_path']).resolve()
         config.tif_channels = list(data['tif_channels'])
         config.percent_cells = float(data['percent_cells'])
+        config.bins = int(data['bins'])
         config.window_size = int(data['window_size'])
         config.cache_size_cellcutter = int(data['cache_size_cellcutter'])
         config.cells_per_chunk = int(data['cells_per_chunk'])

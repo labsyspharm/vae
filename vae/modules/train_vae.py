@@ -387,8 +387,11 @@ def TRAIN_VAE(config):
         )
         store = zarr.ZipStore(z1_train_path, mode='r')
         X_train = zarr.open(store=store)
-
-        arr = da.from_zarr(X_train).rechunk((3,1,40,40))
+        
+        # rechunk to 1 patch/chunk for indexing efficiency during training  
+        arr = da.from_zarr(X_train).rechunk(
+            (X_train.chunks[0], 1, X_train.chunks[2], X_train.chunks[3])
+        )
         store = zarr.MemoryStore()
         arr.to_zarr(store, overwrite=True)
         X_train = zarr.open(store, mode="r")
@@ -396,7 +399,9 @@ def TRAIN_VAE(config):
         # Optional subsample:
         # X_train = X_train[:, 0:1000, :, :]
         # X_train = zarr.array(
-        #     X_train, chunks=(21, 1, 62, 62), dtype=X_train.dtype
+        #     X_train, chunks=(X_train.chunks[0], 1, 
+        #                      X_train.chunks[2], 
+        #                      X_train.chunks[3]), dtype=X_train.dtype
         # )
         
         # Read validation patches (16-bit unsigned integers)
@@ -407,7 +412,10 @@ def TRAIN_VAE(config):
         store = zarr.ZipStore(z1_validate_path, mode='r')
         X_valid = zarr.open(store=store)
 
-        arr = da.from_zarr(X_valid).rechunk((3,1,40,40))
+        # rechunk to 1 patch/chunk for indexing efficiency during training  
+        arr = da.from_zarr(X_valid).rechunk(
+            (X_valid.chunks[0], 1, X_valid.chunks[2], X_valid.chunks[3])
+        )
         store = zarr.MemoryStore()
         arr.to_zarr(store, overwrite=True)
         X_valid = zarr.open(store, mode="r")
@@ -415,7 +423,9 @@ def TRAIN_VAE(config):
         # Optional subsample:
         # X_valid = X_valid[:, 0:1000, :, :]
         # X_valid = zarr.array(
-        #     X_valid, chunks=(21, 1, 62, 62), dtype=X_valid.dtype
+        #     X_valid, chunks=(X_valid.chunks[0], 1, 
+        #                      X_valid.chunks[2], 
+        #                      X_valid.chunks[3]), dtype=X_valid.dtype
         # )
 
         # Read training labels

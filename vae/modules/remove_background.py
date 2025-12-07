@@ -233,12 +233,7 @@ def REMOVE_BACKGROUND(config):
                                 raveled_data = da.where(mask, scaled_values, 0)
                                 raveled_data = raveled_data[raveled_data > 0]
                                 raveled_data = np.clip(raveled_data, 0, 1)
-                            
-                            if str(imgs.dtype) == 'uint8':
-                                bins = 15
-                            elif str(imgs.dtype) == 'uint16':
-                                bins = 30  # Lunaphore: 30  # CyCIF: 200
-                            
+
                             # Get percentile values
                             p_min, p_max = np.percentile(
                                 raveled_data, [0.01, 99.99]
@@ -250,7 +245,7 @@ def REMOVE_BACKGROUND(config):
                                 p_min = max(0, p_min - 0.01)
                                 p_max = p_max + 0.01
                                 
-                            bins = np.linspace(p_min, p_max, bins)
+                            bins = np.linspace(p_min, p_max, config.bins)
                             counts, bin_edges = np.histogram(
                                 raveled_data, bins=bins
                             )
@@ -260,7 +255,7 @@ def REMOVE_BACKGROUND(config):
                             )
                             handle = mlines.Line2D(
                                 [], [], color=color, marker='s', markersize=8, 
-                                linestyle='None', label=sample.split('-')[-1]
+                                linestyle='None', label=sample
                             )
                             handles.append(handle)
                             fig.suptitle(f'log10({type})', fontsize=12)

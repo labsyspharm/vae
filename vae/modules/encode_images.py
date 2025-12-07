@@ -552,7 +552,7 @@ def PlotReconstructedImages(config, patch_dims, X, y, X_seg, X_decoded_reversed,
     # sort by row index for efficient indexing
     # selected_labels.sort_index(inplace=True)  
 
-    selected_labels.reset_index(drop=True, inplace=True)
+    # selected_labels.reset_index(drop=True, inplace=True)
 
     # Isolate encodings and image patches associated with lasso selection
     X = X[selected_labels.index]
@@ -624,6 +624,15 @@ def PlotReconstructedImages(config, patch_dims, X, y, X_seg, X_decoded_reversed,
                 ).reshape(1, 1, input_img.shape[2])
                 input_img = (input_img - lower) / (upper - lower)
 
+                # use existing channel intensity ranges
+                # lower = np.array(
+                #     [input_img[i].min() for i in range(input_img.shape[0])]
+                # ).reshape(input_img.shape[0], 1, 1)
+                # upper = np.array(
+                #     [input_img[i].max() for i in range(input_img.shape[0])]
+                # ).reshape(input_img.shape[0], 1, 1)
+                # input_img = (input_img - lower) / (upper - lower)
+                
                 # Slice out channels to visualize
                 channel_indices = np.array(
                     [tif_channels.index(i) for i in channel_color_dict.keys()]
@@ -930,8 +939,9 @@ def ENCODE_IMAGES(config):
         )
         bkgd_limits = {eval(k): v for (k, v) in bkgd_limits.items()}
 
-        contrast_limits = yaml.safe_load(open(config.contrast_path))
-        
+        contrast_limits = yaml.safe_load(
+            open(config.contrast_path))['setContrast']
+
         # Ensure keys in config.tif_channel order
         contrast_limits = {k: contrast_limits[k] for k in config.tif_channels}  
         
@@ -1116,15 +1126,14 @@ def ENCODE_IMAGES(config):
         ########
         # LEIDEN PATCHES
         # patches = pd.read_csv(
-        #     '/Users/bakergr/Desktop/chen/VAE10/'
-        #     '7_latent_space_LD1404/leiden-patches.csv'
+        #     '/Volumes/T7 Shield/emili/VAE10/'
+        #     '7_latent_space_LD1000/for_leiden_FULL-patches.csv' 
         # )
         # patches = pd.read_csv(
-        #     '/Users/bakergr/Desktop/gibbs/VAE14_VIG21/'
+        #     '/Volumes/T7 Shield/gibbs/VAE14_VIG21/'
         #     '7_latent_space_LD2822/leiden-patches.csv'
         # )
 
-        # import pdb; pdb.set_trace()
         # filt = y[y['CellID'].isin(patches['CellID'])]
         # filt['CellID'] = pd.Categorical(
         #     filt['CellID'], categories=patches['CellID'], ordered=True
@@ -1198,10 +1207,16 @@ def ENCODE_IMAGES(config):
                     f'encodings_{num_cells}.parquet'), 
                 index=False
             )
+            x_encoded_df.to_csv(
+                os.path.join(
+                    save_dir, 
+                    f'for_leiden_{num_cells}.csv'), 
+                index=False
+            )
 
         #######################################################################
         # Embed latent vectors
-        
+
         if (config.latent_dimension > 2):
             embedding_path = os.path.join(save_dir, 
                                           f'embedding_{num_cells}.npy')
@@ -1236,7 +1251,7 @@ def ENCODE_IMAGES(config):
                         output_metric='euclidean',
                         min_dist=0.1,
                         repulsion_strength=3,
-                        random_state=None,  # random_state=1
+                        random_state=1,  # random_state=1
                         n_epochs=1000,
                         init='spectral',
                         metric='euclidean',
@@ -1319,7 +1334,7 @@ def ENCODE_IMAGES(config):
         # LEIDEN
         # labels_list['leiden'] = patches['Cluster']
         #########
-
+        
         try:
             leiden_clusters = pd.read_csv(
                 os.path.join(save_dir, f'encodings_{num_cells}-patches.csv')
@@ -1357,7 +1372,7 @@ def ENCODE_IMAGES(config):
             channel_color_dict=config.channel_colors,
             tif_channels=config.tif_channels,
             patch_dims=patch_dims, mask=mask,
-            chunk_size=chunk_size, intensity_multiplier=1.3
+            chunk_size=chunk_size, intensity_multiplier=1.0
         )
 
         # Plot latent vectors as their learned reconstructions
@@ -1401,7 +1416,7 @@ def ENCODE_IMAGES(config):
             config=config,
             patch_dims=patch_dims,
             X=X,
-            y=labels_list['sample'][0:100],
+            y=labels_list['sample'].sample(n=100, random_state=0),
             X_seg=X_seg,
             X_decoded_reversed=X_decoded_reversed,
             contrast_limits=contrast_limits,

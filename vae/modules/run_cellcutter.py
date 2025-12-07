@@ -9,6 +9,7 @@ import ome_types
 import numpy as np
 import pandas as pd
 from subprocess import run
+from subprocess import CalledProcessError
 
 from ..utils import log_banner, log_multiline
 
@@ -137,27 +138,42 @@ def RUN_CELLCUTTER(config):
             group.to_csv(temp_csv_path, index=False)
             
             # Handle file paths for single and multi-tissue use cases
-            if os.path.exists(os.path.join(config.tif_path, f"{sample}.ome.tif")):
-                # Multi-tissue input
-                tif_path = os.path.join(config.tif_path, f"{sample}.ome.tif")
+            tif_path = os.path.join(config.tif_path, f"{sample}.ome.tif")
+            tif_path_alt = os.path.join(config.tif_path, f"{sample}.tif")
+            if os.path.exists(tif_path):
+                # Multi-tissue input (.ome.tif)
+                tif_path = tif_path
+            elif os.path.exists(tif_path_alt):
+                # Multi-tissue input (.tif)
+                tif_path = tif_path_alt
             else:
                 # Single-tissue input
                 tif_path = config.tif_path
 
-            if os.path.exists(os.path.join(config.mask_path, f"{sample}.ome.tif")):
-                # Multi-tissue input
-                mask_path = os.path.join(config.mask_path, f"{sample}.ome.tif")
+            mask_path = os.path.join(config.mask_path, f"{sample}.ome.tif")
+            mask_path_alt = os.path.join(config.mask_path, f"{sample}.tif")
+            if os.path.exists(mask_path):
+                # Multi-tissue input (.ome.tif)
+                mask_path = mask_path
+            elif os.path.exists(mask_path_alt):
+                # Multi-tissue input (.tif)
+                mask_path = mask_path_alt
             else:
                 # Single-tissue input
                 mask_path = config.mask_path
-            
-            if os.path.exists(os.path.join(config.outlines_path, f"{sample}.ome.tif")):
-                # Multi-tissue input
-                outlines_path = os.path.join(config.outlines_path, f"{sample}.ome.tif")
+
+            outlines_path = os.path.join(config.outlines_path, f"{sample}.ome.tif")
+            outlines_path_alt = os.path.join(config.outlines_path, f"{sample}.tif")
+            if os.path.exists(outlines_path):
+                # Multi-tissue input (.ome.tif)
+                outlines_path = outlines_path
+            elif os.path.exists(outlines_path_alt):
+                # Multi-tissue input (.tif)
+                outlines_path = outlines_path_alt
             else:
                 # Single-tissue input
                 outlines_path = config.outlines_path
-            
+
             ###################################################################
             
             # Run cellcutter if sample was not already processed for patches
@@ -171,10 +187,12 @@ def RUN_CELLCUTTER(config):
                 # Check pixel size of image
                 ome = ome_types.from_tiff(tif_path)
                 num_tif_channels = len(ome.images[0].pixels.channels)
-                pixel_size_microns = (
-                    ome.images[0].pixels.physical_size_x_quantity.to('micron')
-                )
-                logger.info(f'Physical pixel size = {pixel_size_microns}')
+                if hasattr(ome.images[0].pixels, 'physical_size_x_quantity'):
+                    pixel_size_microns = (
+                        ome.images[0].pixels.physical_size_x_quantity.to(
+                            'micron')
+                    )
+                    logger.info(f'Physical pixel size = {pixel_size_microns}')
                 print()
 
                 pattern = os.path.join(
@@ -184,7 +202,10 @@ def RUN_CELLCUTTER(config):
                 matches = glob.glob(pattern)
                 if not matches:
                     mask = False
-                    logger.info("Artifact mask file does not exist, cutting patches without QC")
+                    logger.info(
+                        "Artifact mask file does not exist, "
+                        "cutting patches without QC"
+                    )
                     print()
                     channels_to_cut = marker_channel_numbers 
                 else:
@@ -196,6 +217,7 @@ def RUN_CELLCUTTER(config):
                     channels_to_cut = (
                         marker_channel_numbers + [str(num_tif_channels + 1)]
                     )
+
                 # Run cellcutter to generate image patches
                 run(
                     ["cut_cells", "-z", "-f", 
@@ -207,9 +229,10 @@ def RUN_CELLCUTTER(config):
                      str(temp_csv_path),
                      os.path.join(
                          save_dir, 
-                         f"{name}_{sample}_patches_{config.window_size}.zip"),
-                     "--channels",  
-                     ] + channels_to_cut
+                         f"{name}_{sample}_patches_"
+                         f"{config.window_size}.zip"),
+                     "--channels"] + channels_to_cut,
+                    check=True
                 )
 
                 # Read cellcutter output image patches
@@ -217,7 +240,8 @@ def RUN_CELLCUTTER(config):
                     save_dir,
                     f'{name}_{sample}_patches_{config.window_size}.zip'
                 )
-                X = zarr.open(zarr.ZipStore(cellcutter_output_path), mode='r')
+                X_zipstore = zarr.ZipStore(cellcutter_output_path)
+                X = zarr.open(X_zipstore, mode='r')
 
                 if X_combo is None:
                     # If array doesn't exist, create new one
@@ -260,10 +284,12 @@ def RUN_CELLCUTTER(config):
                      str(temp_csv_path),
                      os.path.join(
                          save_dir, 
-                         f"{name}_{sample}_patches_{config.window_size}_seg.zip"
+                         f"{name}_{sample}_patches_"
+                         f"{config.window_size}_seg.zip"
                      ),
                      "--channels", "1"
-                     ]
+                     ],
+                    check=True
                 )
                 
                 # Read cellcutter output segmentation outlines
@@ -271,9 +297,8 @@ def RUN_CELLCUTTER(config):
                     save_dir,
                     f'{name}_{sample}_patches_{config.window_size}_seg.zip'
                 )
-                X_seg = zarr.open(
-                    zarr.ZipStore(cellcutter_output_path_seg), mode='r'
-                )
+                X_seg_zipstore = zarr.ZipStore(cellcutter_output_path_seg)
+                X_seg = zarr.open(X_seg_zipstore, mode='r')
 
                 if X_combo_seg is None:
                     # If array doesn't exist, create new one
@@ -298,11 +323,16 @@ def RUN_CELLCUTTER(config):
 
             try:
                 # Remove sample-specific zip stores and temp files
+                # on PC, must explicitly close zip store before removing
+                if 'X_zipstore' in locals():
+                    X_zipstore.close()
                 os.remove(
                     os.path.join(
                         save_dir,
                         f"{name}_{sample}_patches_{config.window_size}.zip")
                 )
+                # on PC, must explicitly close zip store before removing
+                X_seg_zipstore.close()
                 os.remove(
                     os.path.join(
                         save_dir,

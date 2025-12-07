@@ -53,6 +53,15 @@ def PlotInputImgs(config, numExamples, numColumns, imgs, seg, intensity_multipli
         ).reshape(input_img.shape[0], 1, 1)
         input_img = (input_img - lower) / (upper - lower)
 
+        # use existing channel intensity ranges
+        # lower = np.array(
+        #     [input_img[i].min() for i in range(input_img.shape[0])]
+        # ).reshape(input_img.shape[0], 1, 1)
+        # upper = np.array(
+        #     [input_img[i].max() for i in range(input_img.shape[0])]
+        # ).reshape(input_img.shape[0], 1, 1)
+        # input_img = (input_img - lower) / (upper - lower)
+
         # Slice out channels to visualize
         channel_indices = np.array(
             [tif_channels.index(i) for i in channel_color_dict.keys()]
@@ -95,7 +104,7 @@ def PlotInputImgs(config, numExamples, numColumns, imgs, seg, intensity_multipli
 
             custom_lines.append(Line2D([0], [0], color=color, lw=5))
 
-        label = data[cluster_column]
+        label = data['Sample']  # cluster_column
 
         # plt.imshow(seg_rgb, alpha=0.4)
         plt.imshow(centroid_layer)
@@ -135,7 +144,7 @@ def GENERATE_IMAGE_GALLERY(config):
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
-        # read training labels
+        # read test labels
         csv_path = os.path.join(cellcutter_input_path, 'test_qc.csv')
         csv = pd.read_csv(csv_path)
         csv['Sample'] = csv['Sample'].astype(str)
@@ -155,7 +164,9 @@ def GENERATE_IMAGE_GALLERY(config):
         z_seg = zarr.open(zarr.ZipStore(zip_store_path_seg), mode='r')
 
         # Contrast settings
-        contrast_limits = yaml.safe_load(open(config.contrast_path))
+        contrast_limits = yaml.safe_load(
+            open(config.contrast_path)
+        )['setContrast']
 
         # Ensure keys in config.tif_channel order
         contrast_limits = {k: contrast_limits[k] for k in config.tif_channels}
@@ -181,7 +192,7 @@ def GENERATE_IMAGE_GALLERY(config):
             seg=seg,
             intensity_multiplier=1.0,
             labels=labels,
-            fontSize=2,
+            fontSize=5,
             tif_channels=config.tif_channels,
             channel_color_dict=config.channel_colors,
             fileName='patch_examples',
