@@ -244,7 +244,8 @@ def DecodeVectors(config, decoder, X_encoded, X, X_seg, sample_labels, bkgd_limi
     )
     X_decoded_reversed = X_decoded_reversed[:, :, :, channel_indices]
 
-    X_decoded_reversed *= mask  # re-apply mask for visualization
+    if mask is not None:
+        X_decoded_reversed *= mask  # re-apply mask for visualization
 
     # for RGB images
     if config.RGB:
@@ -1503,7 +1504,28 @@ def ENCODE_IMAGES(config):
                 filename=name,
                 save_dir=save_dir
             )
+        
+        # take a 100-patch subsample of data for decoding
+        if X.shape[0] > 100:
+            idxs = rng.choice(
+                X.shape[0], size=100, replace=False
+            )
+            # chunk0 = X.chunksize[0]
+            X = X[idxs].rechunk({0: chunk0})
+            X_transform = X_transform[idxs].rechunk({0: chunk0})
+            X_seg = X_seg[idxs].rechunk({0: chunk0})
+            
+            y = y.iloc[idxs].copy()
+            y.reset_index(drop=True, inplace=True)
 
+            labels_list = {'sample': y['Sample']}
+
+            X_encoded = X_encoded[idxs].copy()
+            X_encoded_embedded = X_encoded_embedded[idxs].copy()
+
+            sample_labels = da.from_array(y['Sample'].values, chunks=(chunk0))
+            sample_labels = sample_labels.reshape((-1, 1, 1, 1))
+        
         #######################################################################
         # Decode latent vectors to visualize learned reconstructions
 
