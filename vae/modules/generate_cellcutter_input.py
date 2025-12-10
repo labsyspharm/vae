@@ -34,23 +34,23 @@ def GENERATE_CELLCUTTER_INPUT(config):
         #######################################################################
         # weighted random sampling
         
-        # # drop noisy cells from HDBSCAN clustering
-        # csv = csv[csv['cluster_3d'] != -1]
+        # drop noisy cells from HDBSCAN clustering
+        csv = csv[csv['cluster_3d'] != -1]
         
-        # # calculate weighted random sample by cluster size (class balance)
-        # groups = csv.groupby('cluster_3d')
-        # sample_weights = pd.DataFrame(
-        #     {'weights': 1 / (groups.size() * len(groups))}
-        # )
-        # weights = pd.merge(
-        #     csv[['cluster_3d']], sample_weights,
-        #     left_on='cluster_3d', right_index=True
-        # )
+        # calculate weighted random sample by cluster size (class balance)
+        groups = csv.groupby('cluster_3d')
+        sample_weights = pd.DataFrame(
+            {'weights': 1 / (groups.size() * len(groups))}
+        )
+        weights = pd.merge(
+            csv[['cluster_3d']], sample_weights,
+            left_on='cluster_3d', right_index=True
+        )
 
-        # csv = csv.sample(
-        #     frac=config.percent_cells, replace=False,
-        #     weights=weights['weights'], random_state=0, axis=0
-        # )
+        csv = csv.sample(
+            frac=config.percent_cells, replace=False,
+            weights=weights['weights'], random_state=0, axis=0
+        )
 
         # print()
         # print('Cells per cluster after cluster-weighted random sampling:')
