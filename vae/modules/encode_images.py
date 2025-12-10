@@ -244,6 +244,8 @@ def DecodeVectors(config, decoder, X_encoded, X, X_seg, sample_labels, bkgd_limi
     )
     X_decoded_reversed = X_decoded_reversed[:, :, :, channel_indices]
 
+    X_decoded_reversed *= mask  # re-apply mask for visualization
+
     # for RGB images
     if config.RGB:
         pass
@@ -542,17 +544,12 @@ def LassoVectors(contrast_limits, patch_dims, imgs_instead_of_points, zoom, X, X
     plt.close('all')
 
 
-def PlotReconstructedImages(config, patch_dims, X, y, X_seg, X_decoded_reversed, contrast_limits, numColumns, tif_channels, channel_color_dict, intensity_multiplier, patch_font_size, filename, save_dir):
+def PlotReconstructedImages(config, patch_dims, X, mask, y, X_seg, X_decoded_reversed, contrast_limits, numColumns, tif_channels, channel_color_dict, intensity_multiplier, patch_font_size, filename, save_dir):
 
     selected_labels = pd.DataFrame(data={'label': y})
 
     # Sort selected labels
     selected_labels.sort_values(by='label', inplace=True)
-
-    # sort by row index for efficient indexing
-    # selected_labels.sort_index(inplace=True)  
-
-    # selected_labels.reset_index(drop=True, inplace=True)
 
     # Isolate encodings and image patches associated with lasso selection
     X = X[selected_labels.index]
@@ -563,15 +560,10 @@ def PlotReconstructedImages(config, patch_dims, X, y, X_seg, X_decoded_reversed,
     numRows = math.ceil(numSamples / numColumns)
     grid_dims = (numRows, numColumns)
 
-    fig = plt.figure()
-
-    fig.text(0.13, 0.97, 'Input Images', ha='left', fontsize='medium')
-    fig.text(
-        0.53, 0.97, 'Learned Reconstructions', ha='left', fontsize='medium'
-    )
+    fig = plt.figure(figsize=(5, 3))
 
     outer_grid_rows = 1
-    outer_grid_cols = 2
+    outer_grid_cols = 3
 
     outer = gridspec.GridSpec(
         outer_grid_rows, outer_grid_cols, wspace=0.1, hspace=0.0
@@ -581,8 +573,32 @@ def PlotReconstructedImages(config, patch_dims, X, y, X_seg, X_decoded_reversed,
 
         inner = gridspec.GridSpecFromSubplotSpec(
             grid_dims[0], grid_dims[1],
-            subplot_spec=outer[panel], wspace=0.1, hspace=0.0
+            subplot_spec=outer[panel], wspace=0.1, hspace=-0.6
         )
+
+        if panel == 0:
+            ax = plt.Subplot(fig, outer[panel])
+            ax.text(
+                0.5, 0.935, 'Original', fontsize=4.0,
+                ha='center', va='center'
+            )
+        
+        elif panel == 1:
+            ax = plt.Subplot(fig, outer[panel])
+            ax.text(
+                0.5, 0.935, 'Masked Input', fontsize=4.0,
+                ha='center', va='center'
+            )
+
+        elif panel == 2:
+            ax = plt.Subplot(fig, outer[panel])
+            ax.text(
+                0.5, 0.935, 'Learned Representations', fontsize=4.0,
+                ha='center', va='center'
+            )
+
+        ax.axis('off')
+        fig.add_subplot(ax)
 
         for e, (_, label) in enumerate(selected_labels.iterrows()):
 
@@ -656,32 +672,80 @@ def PlotReconstructedImages(config, patch_dims, X, y, X_seg, X_decoded_reversed,
                     # final RGB image patch
                     overlay = np.sum(input_img, axis=2)
                     overlay = np.clip(overlay, 0, 1)
+            
+            if panel == 1:
 
-            elif panel == 1:
+                # Slice image patch from Zarr
+                input_img = X[e]
+                
+                # Apply image contrast settings
+                lower = np.array(
+                    [i[0] for i in contrast_limits.values()]
+                ).reshape(1, 1, input_img.shape[2])
+                upper = np.array(
+                    [i[1] for i in contrast_limits.values()]
+                ).reshape(1, 1, input_img.shape[2])
+                input_img = (input_img - lower) / (upper - lower)
+
+                # use existing channel intensity ranges
+                # lower = np.array(
+                #     [input_img[i].min() for i in range(input_img.shape[0])]
+                # ).reshape(input_img.shape[0], 1, 1)
+                # upper = np.array(
+                #     [input_img[i].max() for i in range(input_img.shape[0])]
+                # ).reshape(input_img.shape[0], 1, 1)
+                # input_img = (input_img - lower) / (upper - lower)
+                
+                # Slice out channels to visualize
+                channel_indices = np.array(
+                    [tif_channels.index(i) for i in channel_color_dict.keys()]
+                )
+                input_img = input_img[:, :, channel_indices]
+
+                input_img *= mask[0]  # slice mask to fit single-channel dims
+                
+                # for RGB images
+                if config.RGB:
+                    overlay = input_img
+                else:
+                    # Convert to RGB, brighten, and colorize
+                    input_img = gray2rgb(input_img)
+                    input_img *= intensity_multiplier
+                    color_arr = np.array(
+                        [to_rgb(color) for _, color in 
+                         channel_color_dict.items()]
+                    ).reshape(1, 1, -1, 3)
+                    input_img *= color_arr
+
+                    # Sum images along channels axis to generate 
+                    # final RGB image patch
+                    overlay = np.sum(input_img, axis=2)
+                    overlay = np.clip(overlay, 0, 1)
+            
+            elif panel == 2:
 
                 # RGB overlay for learned reconstructions are generated
                 # in DecodeVectors() 
                 overlay = X_decoded_reversed[e]
             
             ax.imshow(overlay)
-            ax.imshow(seg_rgb, alpha=0.4)
-            ax.imshow(centroid_layer)
+            # ax.imshow(seg_rgb, alpha=0.4)
+            # ax.imshow(centroid_layer)
 
-            # ax.set_xlabel(
-            #         label['label'], fontsize=patch_font_size, labelpad=0.75
-            # )
             fig.add_subplot(ax)
 
     fig.subplots_adjust(
-        bottom=0.01, top=0.94, left=0.01, right=0.85, wspace=0.2, hspace=0.1
+        left=0.04, right=0.89, bottom=-0.05, top=1.01
     )
 
     legend_elements = []
     for name, color in channel_color_dict.items():
         legend_elements.append(Line2D([0], [0], color=color, lw=3, label=name))
 
-    bbox = transforms.Bbox.from_extents(0, 0, 0, fig.get_size_inches()[1])
-    num_legend_columns(bbox=bbox, ax=fig, legend_elements=legend_elements, size=5)
+    fig.legend(
+        handles=legend_elements, prop={'size': 2.5},
+        bbox_to_anchor=(0.99, 0.925), frameon=False
+    )
 
     plt.tight_layout()
 
@@ -720,8 +784,8 @@ def mse(patch_dims, X_transform, y, X_seg, X_decoded, X_decoded_reversed, mse_pe
 
     X_transform_outliers = X_transform[outlier_idxs]
 
-    y.reset_index(drop=True, inplace=True)
     y_outliers = y[outlier_idxs]
+    y_outliers.reset_index(drop=True, inplace=True)
     X_outliers_seg = X_seg[outlier_idxs]
     X_decoded_reversed_outliers = X_decoded_reversed[outlier_idxs]
 
@@ -1122,6 +1186,7 @@ def ENCODE_IMAGES(config):
             X_seg = X_seg[idxs].rechunk({0: chunk0})
             
             y = y.iloc[idxs].copy()
+            y.reset_index(drop=True, inplace=True)
 
         ########
         # LEIDEN PATCHES
@@ -1171,6 +1236,83 @@ def ENCODE_IMAGES(config):
             X_transform *= mask
         else:
             mask = None
+
+        def undo_transform(X_transform, sample_labels, bkgd_limits, original_dtype, mask=None):
+            """
+            Undo both remove_background() and Gaussian vignette mask application.
+
+            Args:
+                X_transform (ndarray):
+                    The transformed data AFTER remove_background() and mask multiplication.
+                    Shape: (num_samples, H, W, C), dtype float32.
+                sample_labels (ndarray):
+                    Sample labels used in remove_background.
+                bkgd_limits (dict):
+                    Background limits used during normalization.
+                mask (ndarray):
+                    The Gaussian vignette mask applied in the forward pass.
+                    Shape: (1, H, W, 1) or broadcastable to patch shape.
+                original_dtype (np.dtype):
+                    The original dtype (uint8 or uint16).
+
+            Returns:
+                ndarray: Approximate reconstruction of original image values.
+            """
+
+            # ------------------------------
+            # STEP 1 — Undo vignette masking
+            # ------------------------------
+            if mask is not None:
+                # Avoid division by zero: mask pixels that are 0 should remain 0
+                safe_mask = np.where(mask == 0, 1, mask)
+                X_norm = X_transform / safe_mask
+                X_norm = np.where(mask == 0, 0, X_norm)
+            else:
+                X_norm = X_transform
+            
+            # -----------------------------------
+            # STEP 2 — Undo remove_background()
+            # -----------------------------------
+
+            if original_dtype == np.uint8:
+                divisor = 255
+            elif original_dtype == np.uint16:
+                divisor = 65535
+            else:
+                raise ValueError(f"Unsupported dtype: {original_dtype}")
+
+            num_samples, _, _, num_channels = X_norm.shape
+
+            # reconstruct channel-specific mins
+            channel_mins = np.array([
+                bkgd_limits[key] for key in bkgd_limits.keys()
+                for i in sample_labels.ravel() if i == key[0]
+            ]).reshape(num_samples, num_channels)
+
+            channel_maxs = np.full((num_samples, num_channels), divisor, dtype="float32")
+
+            # log-space limits
+            log_channel_mins = np.log10(channel_mins + 1).reshape(num_samples, 1, 1, num_channels)
+            log_channel_maxs = np.log10(channel_maxs + 1).reshape(num_samples, 1, 1, num_channels)
+            range_vals = log_channel_maxs - log_channel_mins
+
+            # invert normalization
+            X_log = X_norm * range_vals + log_channel_mins
+
+            # invert log transform
+            X_recon = 10**X_log - 1
+
+            # clamp to valid dtype range
+            X_recon = np.clip(X_recon, 0, divisor)
+
+            # convert back to original dtype
+            X_recon = X_recon.astype(original_dtype)
+
+            return X_recon
+
+        X_transform_rev = undo_transform(
+            X_transform, sample_labels, bkgd_limits, np.uint16, mask=mask
+        )
 
         #######################################################################
         # Encode images
@@ -1416,6 +1558,7 @@ def ENCODE_IMAGES(config):
             config=config,
             patch_dims=patch_dims,
             X=X,
+            mask=mask,
             y=labels_list['sample'].sample(n=100, random_state=0),
             X_seg=X_seg,
             X_decoded_reversed=X_decoded_reversed,
@@ -1456,6 +1599,7 @@ def ENCODE_IMAGES(config):
             config=config,
             patch_dims=patch_dims,
             X=X_transform_outliers,
+            mask=mask,
             y=y_outliers,
             X_seg=X_outliers_seg,
             X_decoded_reversed=X_decoded_reversed_outliers,

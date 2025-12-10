@@ -79,7 +79,7 @@ def input_output(config):
     # bkgd_limits = {eval(k): v for k, v in bkgd_limits.items()}
 
     # Image contrast limits
-    contrast_limits = yaml.safe_load(open(config.contrast_path))
+    contrast_limits = yaml.safe_load(open(config.contrast_path))['setContrast']
 
     # Load previously saved encoder and decoder
     try:

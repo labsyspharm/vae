@@ -6,10 +6,8 @@ package:
   version: "{{ version }}"
 
 source:
-  git_url: git@github.com:labsyspharm/vae.git  # labsyspharm/vae uses ssh
+  git_url: https://github.com/labsyspharm/vae.git
   git_rev: main
-  # git_url: https://github.com/gjbaker/vae.git
-  # git_url: https://github.com/labsyspharm/vae
   # git_tag: v0.0.5
 build:
   number: 0
@@ -32,7 +30,7 @@ requirements:
     - pip
     - "poetry-core>=1.4,<1.7"  # import os bug in recent version of poetry-core
   run:
-    - python
+    - python<3.14
     - hdbscan
     - umap-learn
     - keras
@@ -47,7 +45,7 @@ requirements:
     - tensorflow-probability=0.23.0  # compatible with TF 2.15.0
     - "zarr<3.0.0"
     - opencv
-    - pyqt==5.15.11  # ensuring PyQT5 used by opencv
+    - napari['all']
     - dask
     - ome-types
     - pytorch # used for Pytorch segmentation models 

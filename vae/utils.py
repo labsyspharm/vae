@@ -130,7 +130,7 @@ def compute_vignette_mask(window_size, std_dev):
     if num_pixels % 2 == 1:
         pass  # number is already odd
     else:
-        num_pixels += 1
+        num_pixels + 1
 
     # create Gaussian kernel
     if num_pixels > window_size:
@@ -161,14 +161,9 @@ def compute_vignette_mask(window_size, std_dev):
         
         # define the range of indices for cropping
         start_x = max(0, center[1] - half_size)
-        end_x = start_x + window_size  # Ensure the width is window_size
+        end_x = min(mask.shape[1], center[1] + half_size)
         start_y = max(0, center[2] - half_size)
-        end_y = start_y + window_size  # Ensure the height is window_size
-
-        # start_x = max(0, center[1] - half_size)
-        # end_x = min(mask.shape[1], center[1] + half_size)
-        # start_y = max(0, center[2] - half_size)
-        # end_y = min(mask.shape[2], center[2] + half_size)
+        end_y = min(mask.shape[2], center[2] + half_size)
         
         # crop the larger array into the smaller mask
         cropped_mask = mask[:, start_x:end_x, start_y:end_y, :]

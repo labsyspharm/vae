@@ -23,7 +23,7 @@ authors = ["Gregory J. Baker <gregory_baker2@hms.harvard.edu>"]
 homepage = "https://github.com/labsyspharm/vae"
 
 [tool.poetry.dependencies]
-python = ">=3.9"
+python = "<3.14"
 hdbscan = "*"
 umap-learn = "*"
 keras = "*"
