@@ -1238,6 +1238,7 @@ def ENCODE_IMAGES(config):
         else:
             mask = None
 
+        # this code reverses the remove_background and masking opperations
         def undo_transform(X_transform, sample_labels, bkgd_limits, original_dtype, mask=None):
             """
             Undo both remove_background() and Gaussian vignette mask application.
@@ -1310,10 +1311,9 @@ def ENCODE_IMAGES(config):
             X_recon = X_recon.astype(original_dtype)
 
             return X_recon
-
-        X_transform_rev = undo_transform(
-            X_transform, sample_labels, bkgd_limits, np.uint16, mask=mask
-        )
+        # X_transform_rev = undo_transform(
+        #     X_transform, sample_labels, bkgd_limits, np.uint16, mask=mask
+        # )
 
         #######################################################################
         # Encode images

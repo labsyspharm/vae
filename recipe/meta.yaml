@@ -32,7 +32,7 @@ requirements:
   run:
     - python<3.14
     - hdbscan
-    - umap-learn
+    - umap-learn<0.5.4
     - keras
     - natsort
     - pandas
