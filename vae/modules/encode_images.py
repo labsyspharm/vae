@@ -1243,7 +1243,7 @@ def ENCODE_IMAGES(config):
         else:
             mask = None
 
-        # this code reverses the remove_background and masking opperations
+        # this code reverses the remove_background and masking operations
         def undo_transform(X_transform, sample_labels, bkgd_limits, original_dtype, mask=None):
             """
             Undo both remove_background() and Gaussian vignette mask application.
@@ -1511,9 +1511,9 @@ def ENCODE_IMAGES(config):
             )
         
         # take a 100-patch subsample of data for decoding
-        if X.shape[0] > 100:
+        if X.shape[0] > 1000:
             idxs = rng.choice(
-                X.shape[0], size=100, replace=False
+                X.shape[0], size=1000, replace=False
             )
             # chunk0 = X.chunksize[0]
             X = X[idxs].rechunk({0: chunk0})

@@ -414,106 +414,106 @@ def SALIENCY_MAP(config):
         ############################################################
         # Decode concept vectors and view their learned reconstructions
         
-        print('Decoding concept vectors...')
+        # print('Decoding concept vectors...')
 
-        decoded_cvs = DecodeVectors(
-            decoder=decoder,
-            img_dims=img_dims,
-            concept_vectors=concept_vectors,
-            percentile_cutoffs=percentile_cutoffs, 
-            contrast_limits=contrast_limits,
-            tif_channels=config.tif_channels,
-            channel_color_dict=config.channel_colors,
-            intensity_multiplier=decoded_intensity_multiplier
-        )
+        # decoded_cvs = DecodeVectors(
+        #     decoder=decoder,
+        #     img_dims=img_dims,
+        #     concept_vectors=concept_vectors,
+        #     percentile_cutoffs=percentile_cutoffs, 
+        #     contrast_limits=contrast_limits,
+        #     tif_channels=config.tif_channels,
+        #     channel_color_dict=config.channel_colors,
+        #     intensity_multiplier=decoded_intensity_multiplier
+        # )
         
-        fig = plt.figure(figsize=(11, 3.9))  # VAE9_VIG7
-        # fig = plt.figure(figsize=(9, 2.7))  # VAE30
+        # fig = plt.figure(figsize=(11, 3.9))  # VAE9_VIG7
+        # # fig = plt.figure(figsize=(9, 2.7))  # VAE30
         
-        rows_rounded_up = len(concepts) // 8 + bool(len(concepts) % 8)
-        height_ratios = [1] * rows_rounded_up
+        # rows_rounded_up = len(concepts) // 8 + bool(len(concepts) % 8)
+        # height_ratios = [1] * rows_rounded_up
         
-        rows, cols = (rows_rounded_up, 8)
-        # rows, cols = (3, 8)  # VAE9_VIG7   
-        # rows, cols = (2, 6)  # VAE30
-        
-        outer_gs = gridspec.GridSpec(
-            rows, cols, height_ratios=height_ratios, hspace=0.1, wspace=0.7
-        )  # VAE9_VIG7
+        # rows, cols = (rows_rounded_up, 8)
+        # # rows, cols = (3, 8)  # VAE9_VIG7   
+        # # rows, cols = (2, 6)  # VAE30
         
         # outer_gs = gridspec.GridSpec(
-        #     rows, cols, height_ratios=[1, 1], hspace=0.1, wspace=0.7
-        # )  # VAE30
-
-        for concept in decoded_cvs.keys():
-
-            overlay = np.zeros((img_dims[0], img_dims[1]))
-            overlay = gray2rgb(overlay)
-
-            inner_gs = gridspec.GridSpecFromSubplotSpec(
-                2, 1, subplot_spec=outer_gs[concept], 
-                height_ratios=[0.3, 1], hspace=-0.2
-            )
-            
-            ax1 = fig.add_subplot(inner_gs[0])
-            ax1.bar(
-                x=range(len(config.channel_colors)),
-                height=[val for val in decoded_cvs[concept][1].values()],
-                color=[config.channel_colors[name] for name in
-                       decoded_cvs[concept][1].keys()],
-                width=0.8
-            )
-            ax1.set_xticks([])
-            ax1.set_ylim(0, 1)
-            ax1.set_yticks([0, 0.5, 1])
-            ax1.set_ylabel(
-                'Intensity', fontsize=4.5,
-                fontweight='normal', labelpad=1.0
-            )
-            ax1.tick_params(axis='y', labelsize=5)
-            ax1.spines['top'].set_visible(False)
-            ax1.spines['bottom'].set_visible(False)
-            ax1.spines['right'].set_visible(False)
-            ax1.spines['left'].set_linewidth(0.4)
-
-            ax2 = fig.add_subplot(inner_gs[1])
-            ax2.imshow(decoded_cvs[concept][0])
-            ax2.text(
-                0.5, -0.05, f'Concept {concept}', fontsize=7, fontweight='bold',
-                ha='center', va='top', transform=ax2.transAxes
-            )
-            ax2.axis('off')
-
-        legend_elements = []
-        for name, color in config.channel_colors.items():
-            legend_elements.append(
-                Line2D([0], [0], color=color, lw=5, label=name)
-            )
-        fig.legend(
-            handles=legend_elements, prop={'size': 8},
-            bbox_to_anchor=(0.99, 0.99), handlelength=1.0,
-            frameon=False
-        )
+        #     rows, cols, height_ratios=height_ratios, hspace=0.1, wspace=0.7
+        # )  # VAE9_VIG7
         
-        # VAE9_VIG7
-        plt.subplots_adjust(
-            left=0.04, right=0.87,
-            bottom=0.02, top=0.97,
-            hspace=0.0, wspace=0.0
-        ) 
+        # # outer_gs = gridspec.GridSpec(
+        # #     rows, cols, height_ratios=[1, 1], hspace=0.1, wspace=0.7
+        # # )  # VAE30
 
-        # VAE30
+        # for concept in decoded_cvs.keys():
+
+        #     overlay = np.zeros((img_dims[0], img_dims[1]))
+        #     overlay = gray2rgb(overlay)
+
+        #     inner_gs = gridspec.GridSpecFromSubplotSpec(
+        #         2, 1, subplot_spec=outer_gs[concept], 
+        #         height_ratios=[0.3, 1], hspace=-0.2
+        #     )
+            
+        #     ax1 = fig.add_subplot(inner_gs[0])
+        #     ax1.bar(
+        #         x=range(len(config.channel_colors)),
+        #         height=[val for val in decoded_cvs[concept][1].values()],
+        #         color=[config.channel_colors[name] for name in
+        #                decoded_cvs[concept][1].keys()],
+        #         width=0.8
+        #     )
+        #     ax1.set_xticks([])
+        #     ax1.set_ylim(0, 1)
+        #     ax1.set_yticks([0, 0.5, 1])
+        #     ax1.set_ylabel(
+        #         'Intensity', fontsize=4.5,
+        #         fontweight='normal', labelpad=1.0
+        #     )
+        #     ax1.tick_params(axis='y', labelsize=5)
+        #     ax1.spines['top'].set_visible(False)
+        #     ax1.spines['bottom'].set_visible(False)
+        #     ax1.spines['right'].set_visible(False)
+        #     ax1.spines['left'].set_linewidth(0.4)
+
+        #     ax2 = fig.add_subplot(inner_gs[1])
+        #     ax2.imshow(decoded_cvs[concept][0])
+        #     ax2.text(
+        #         0.5, -0.05, f'Concept {concept}', fontsize=7, fontweight='bold',
+        #         ha='center', va='top', transform=ax2.transAxes
+        #     )
+        #     ax2.axis('off')
+
+        # legend_elements = []
+        # for name, color in config.channel_colors.items():
+        #     legend_elements.append(
+        #         Line2D([0], [0], color=color, lw=5, label=name)
+        #     )
+        # fig.legend(
+        #     handles=legend_elements, prop={'size': 8},
+        #     bbox_to_anchor=(0.99, 0.99), handlelength=1.0,
+        #     frameon=False
+        # )
+        
+        # # VAE9_VIG7
         # plt.subplots_adjust(
-        #     left=0.04, right=0.84, 
-        #     bottom=0.01, top=0.97,
+        #     left=0.04, right=0.87,
+        #     bottom=0.02, top=0.97,
         #     hspace=0.0, wspace=0.0
-        # )  
+        # ) 
 
-        plt.savefig(
-            os.path.join(save_dir, 'decoded_concept_vectors.pdf')
-        )
-        plt.close('all')
-        print()
+        # # VAE30
+        # # plt.subplots_adjust(
+        # #     left=0.04, right=0.84, 
+        # #     bottom=0.01, top=0.97,
+        # #     hspace=0.0, wspace=0.0
+        # # )  
+
+        # plt.savefig(
+        #     os.path.join(save_dir, 'decoded_concept_vectors.pdf')
+        # )
+        # plt.close('all')
+        # print()
 
         ############################################################
         # Compute concept scores (Sc) for latent vectors
