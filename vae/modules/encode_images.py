@@ -570,6 +570,7 @@ def PlotReconstructedImages(config, patch_dims, X, mask, y, X_seg, X_decoded_rev
         outer_grid_rows, outer_grid_cols, wspace=0.1, hspace=0.0
     )
 
+    print()
     for panel in range(outer_grid_rows * outer_grid_cols):
 
         inner = gridspec.GridSpecFromSubplotSpec(
@@ -578,6 +579,7 @@ def PlotReconstructedImages(config, patch_dims, X, mask, y, X_seg, X_decoded_rev
         )
 
         if panel == 0:
+            print('Plotting original image patches')
             ax = plt.Subplot(fig, outer[panel])
             ax.text(
                 0.5, 0.935, 'Original', fontsize=4.0,
@@ -585,6 +587,7 @@ def PlotReconstructedImages(config, patch_dims, X, mask, y, X_seg, X_decoded_rev
             )
         
         elif panel == 1:
+            print('Plotting model input patches')
             ax = plt.Subplot(fig, outer[panel])
             ax.text(
                 0.5, 0.935, 'Masked Input', fontsize=4.0,
@@ -592,9 +595,10 @@ def PlotReconstructedImages(config, patch_dims, X, mask, y, X_seg, X_decoded_rev
             )
 
         elif panel == 2:
+            print('Plotting learned reconstructions')
             ax = plt.Subplot(fig, outer[panel])
             ax.text(
-                0.5, 0.935, 'Learned Representations', fontsize=4.0,
+                0.5, 0.935, 'Learned Reconstructions', fontsize=4.0,
                 ha='center', va='center'
             )
 
@@ -754,6 +758,7 @@ def PlotReconstructedImages(config, patch_dims, X, mask, y, X_seg, X_decoded_rev
         os.path.join(save_dir, f'{filename}.png'), dpi=800, bbox_inches='tight'
     )
     plt.close('all')
+    print()
 
 
 def mse(patch_dims, X_transform, y, X_seg, X_decoded, X_decoded_reversed, mse_percentile_cutoff, filename, save_dir):

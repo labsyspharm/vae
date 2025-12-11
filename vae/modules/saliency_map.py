@@ -350,28 +350,29 @@ def SALIENCY_MAP(config):
             # similarities to all other image patches in a given cluster
             concept_data = {}
             for concept in concepts:
+                if concept != -1:
 
-                print(
-                    'Computing cosine similarity scores for '
-                    f'cluster {concept} encodings...')
+                    print(
+                        'Computing cosine similarity scores for '
+                        f'cluster {concept} encodings...')
 
-                idxs = clusters.index[clusters['Cluster'] == concept]
-                z_plus = encodings.loc[idxs].drop(
-                    columns=['CellID', 'cluster']
-                )
-
-                mean_encoding = z_plus.mean()
-
-                cos = [
-                    cosine_similarity(
-                        mean_encoding.values.reshape(1, -1), i[1].values.reshape(1, -1)
+                    idxs = clusters.index[clusters['Cluster'] == concept]
+                    z_plus = encodings.loc[idxs].drop(
+                        columns=['CellID', 'cluster']
                     )
-                    for i in z_plus.iterrows()
-                ]
-                
-                top = pd.Series([i.item() for i in cos]).sort_values(ascending=False)
 
-                concept_data[concept] = z_plus.iloc[top[0:1].index]
+                    mean_encoding = z_plus.mean()
+
+                    cos = [
+                        cosine_similarity(
+                            mean_encoding.values.reshape(1, -1), i[1].values.reshape(1, -1)
+                        )
+                        for i in z_plus.iterrows()
+                    ]
+                    
+                    top = pd.Series([i.item() for i in cos]).sort_values(ascending=False)
+
+                    concept_data[concept] = z_plus.iloc[top[0:1].index]
             print()
             
             ############################################################
