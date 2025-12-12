@@ -616,12 +616,12 @@ def SALIENCY_MAP(config):
                 axs[idx].hist(
                     concept_scores[concept_counter]['minus'], 
                     bins=50, density=True, color=minus_color,
-                    alpha=0.75, label='Concept neg.'
+                    alpha=0.75, lw=0.0, label='Concept neg.'
                 )
                 axs[idx].hist(
                     concept_scores[concept_counter]['plus'],
                     bins=50, density=True, color=plus_color, 
-                    alpha=0.75, label='Concept pos.'
+                    alpha=0.75, lw=0.0, label='Concept pos.'
                 )
                 axs[idx].set_title(
                     rf'$\bf{{Concept\ {concept_counter}}}$ scores',
