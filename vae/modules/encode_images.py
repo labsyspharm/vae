@@ -706,8 +706,9 @@ def PlotReconstructedImages(config, patch_dims, X, mask, y, X_seg, X_decoded_rev
                     [tif_channels.index(i) for i in channel_color_dict.keys()]
                 )
                 input_img = input_img[:, :, channel_indices]
-
-                input_img *= mask[0]  # slice mask to fit single-channel dims
+                
+                if config.masked_model:
+                    input_img *= mask[0]  # slice mask to fit single-channel dims
                 
                 # for RGB images
                 if config.RGB:
