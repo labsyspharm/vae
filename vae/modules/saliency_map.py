@@ -97,31 +97,14 @@ def input_output(config):
     except OSError:
         print('Decoder not found.')
         sys.exit()
-    
-    # Read Leiden clusters if they have been computed previously
-    try:
 
-        if config.output_path.name == 'VAE9_VIG7':
-            clusters = pd.read_csv(
-                os.path.join(config.output_path, 
-                             f'6_latent_space_LD{config.latent_dimension}/'
-                             f'{config.output_path.name}_'
-                             'encodings-patches_res1.5.csv')
-            )
-        elif config.output_path.name == 'VAE30':
-            clusters = pd.read_csv(
-                os.path.join(config.output_path, 
-                             f'6_latent_space_LD{config.latent_dimension}/'
-                             f'{config.output_path.name}_'
-                             'encodings-patches_res0.75.csv')
-            )
-        elif config.output_path.name == 'VAE9_VIG7':
-            clusters = pd.read_csv(
-                os.path.join(config.output_path, 
-                             f'7_latent_space_LD{config.latent_dimension}/'
-                             f'{config.output_path.name}_'
-                             'encodings_FULL-patches.csv')
-            )
+    # Read Leiden clusters if they have been computed previously
+    leiden_path = os.path.join(
+        config.output_path,
+        f'7_latent_space_LD{config.latent_dimension}/'
+        'encodings_FULL-patches.csv')
+    try:
+        clusters = pd.read_csv(leiden_path)
     except FileNotFoundError:
         # Use HDBSCAN clusters to compute concept saliency
         clusters = np.load(
@@ -130,7 +113,7 @@ def input_output(config):
                 f'7_latent_space_LD{config.latent_dimension}/hdbscan_labels.npy')
         )
         clusters = pd.DataFrame(data={'Cluster': clusters})
-        print()
+    print()
 
     # Read encodings
     if not os.path.exists(os.path.join(save_dir, 'concept_vectors.pkl')) or \
