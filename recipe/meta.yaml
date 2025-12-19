@@ -1,5 +1,5 @@
 {% set name = "vae" %}
-{% set version = "0.0.7" %}
+{% set version = "0.0.8" %}
 
 package:
   name: "{{ name|lower }}"
@@ -39,7 +39,7 @@ requirements:
     - pyarrow
     - pyyaml
     - seaborn
-    - tifffile
+    - tifffile==2024.12.12  # tifffile
     - scikit-learn<1.3
     - scikit-image
     - tensorflow=2.15.0  # avoiding "from tensorflow.keras import XX" errors with tf >= 2.16 and making compatible with available o2 GPU CUDA modules.
