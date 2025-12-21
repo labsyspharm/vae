@@ -270,7 +270,7 @@ def build_and_fit_model(img_shape, latent_dimension, learning_rate, training_epo
     vae.summary()
 
     # Initialize tensorboard
-    tensorboard_log_dir = os.path.join(save_dir, 'tensorboard_logs/fit')
+    tensorboard_log_dir = os.path.join(save_dir, 'tensorboard_logs', 'fit')
     log_dir = os.path.join(
         tensorboard_log_dir, datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     )
@@ -282,7 +282,7 @@ def build_and_fit_model(img_shape, latent_dimension, learning_rate, training_epo
     )
     print()
 
-    checkpoint_path = f"{save_dir}/checkpoints"
+    checkpoint_path = os.path.join(save_dir, 'checkpoints')
     
     # Load existing model
     if os.path.exists(checkpoint_path):
