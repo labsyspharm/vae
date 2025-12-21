@@ -12,6 +12,9 @@ from datetime import datetime
 from natsort import natsorted
 from itertools import product
 
+import matplotlib
+matplotlib.use("Agg")  # avoiding tkinter backend issues on PC
+
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 

@@ -11,8 +11,15 @@ MORPHӔUS is Python-based software for morphology-aware classification of single
 
 Install MORPHӔUS into a dedicated Conda environment and activate it with the following commands:
 ```bash
-conda create -n morphaeus -c conda-forge -c labsyspharm python=3 vae
+
+# macOS
+conda create -n morphaeus -c conda-forge -c labsyspharm python=3.11 vae
 conda activate morphaeus
+
+# PC
+conda create -n morphaeus python=3.11
+conda activate morphaeus
+pip install git+https://github.com/labsyspharm/vae.git@v0.0.7
 ```
 
 If conda is not already installed, you can download it by following the instructions provided [here](https://docs.anaconda.com/miniconda/).
