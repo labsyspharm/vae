@@ -13,7 +13,7 @@ build:
   number: 0
   script:
     - "{{ PYTHON }} -m pip install . --no-deps --ignore-installed -vv "
-    - "{{ PYTHON }} -m pip install git+https://github.com/catalystneuro/lazy_ops.git@master -vv "
+    - "{{ PYTHON }} -m pip install git+https://github.com/catalystneuro/lazy_ops.git@main -vv "
     - "{{ PYTHON }} -m pip install git+https://github.com/labsyspharm/cellcutter.git@main -vv "
   entry_points:
     - vae=vae.scripts.__main__:main
