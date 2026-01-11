@@ -25,7 +25,7 @@ homepage = "https://github.com/labsyspharm/vae"
 [tool.poetry.dependencies]
 python = "<3.14"
 cellcutter = { git = "https://github.com/labsyspharm/cellcutter.git", branch = "main" }
-lazy-ops = { git = "https://github.com/catalystneuro/lazy_ops.git", branch = "master" }
+lazy-ops = { git = "https://github.com/catalystneuro/lazy_ops.git", branch = "main" }
 hdbscan = "*"
 umap-learn = "<0.5.4"
 keras = "*"
