@@ -23,7 +23,7 @@ authors = ["Gregory J. Baker <gregory_baker2@hms.harvard.edu>"]
 homepage = "https://github.com/labsyspharm/vae"
 
 [tool.poetry.dependencies]
-python = "<3.14"
+python = ">=3.11,<3.12"
 cellcutter = { git = "https://github.com/labsyspharm/cellcutter.git", branch = "main" }
 lazyslice = { git = "https://github.com/catalystneuro/lazy_ops.git", branch = "main" }
 hdbscan = "*"
@@ -37,10 +37,12 @@ seaborn = "*"
 tifffile = "2024.12.12"
 scikit-learn = "<1.3"
 scikit-image = "*"
-tensorflow = "2.15.0" # avoiding "from tensorflow.keras import XX" errors with tf >= 2.16 and making compatible with available o2 GPU CUDA modules.
+tensorflow = { version = "2.15.0", markers = "sys_platform != 'darwin' or platform_machine != 'arm64'" }
+tensorflow-macos = { version = "2.15.0", markers = "sys_platform == 'darwin' and platform_machine == 'arm64'" }
+# tensorflow-macos = "2.15.0" # avoiding "from tensorflow.keras import XX" errors with tf >= 2.16 and making compatible with available o2 GPU CUDA modules.
 tensorflow-probability = "0.23.0" # compatible with TF 2.15.0
-zarr = "<3.0.0"
-numcodecs = "<0.12"
+zarr = "<=2.14.0"  # requirement of cellcutter
+numcodecs = "<0.13"
 opencv-python = "*"
 napari = "*"
 dask = "*"

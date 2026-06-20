@@ -1,6 +1,8 @@
 import os
+
 import logging
 
+import numpy as np
 import pandas as pd
 
 from ..utils import log_banner, log_multiline
@@ -34,27 +36,45 @@ def GENERATE_CELLCUTTER_INPUT(config):
         #######################################################################
         # weighted random sampling
         
-        # drop noisy cells from HDBSCAN clustering
-        csv = csv[csv['cluster_3d'] != -1]
-        
-        # calculate weighted random sample by cluster size (class balance)
-        groups = csv.groupby('cluster_3d')
-        sample_weights = pd.DataFrame(
-            {'weights': 1 / (groups.size() * len(groups))}
-        )
-        weights = pd.merge(
-            csv[['cluster_3d']], sample_weights,
-            left_on='cluster_3d', right_index=True
+        cluster_col = (
+            "cluster_2d" if "cluster_2d" in csv.columns else
+            "cluster_3d" if "cluster_3d" in csv.columns else
+            None
         )
 
-        csv = csv.sample(
-            frac=config.percent_cells, replace=False,
-            weights=weights['weights'], random_state=0, axis=0
-        )
+        n_samples = int(len(csv) * config.percent_cells)
 
-        # print()
-        # print('Cells per cluster after cluster-weighted random sampling:')
-        # print(csv.groupby('cluster_3d').size().sort_values(ascending=False))
+        if cluster_col is not None:
+
+            csv = csv[csv[cluster_col] != -1].copy()
+
+            cluster_sizes = csv[cluster_col].value_counts()
+
+            weights = csv[cluster_col].map(
+                lambda c: 1.0 / cluster_sizes[c]
+            ).to_numpy()
+
+            weights = weights / weights.sum()
+
+            chosen_idx = np.random.choice(
+                csv.index,
+                size=n_samples,
+                replace=False,
+                p=weights
+            )
+
+            csv = csv.loc[chosen_idx]
+
+            print("Cells per cluster after cluster-weighted sampling:")
+            print(csv.groupby(cluster_col).size().sort_values(ascending=False))
+
+        else:
+            chosen_idx = np.random.choice(
+                csv.index,
+                size=n_samples,
+                replace=False
+            )
+            csv = csv.loc[chosen_idx]
 
         #######################################################################
         
