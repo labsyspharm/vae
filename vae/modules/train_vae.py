@@ -111,7 +111,9 @@ class DataGenerator(Sequence):
         X = da.from_array(X)
   
         labels = self.y[batch_indices]
-        dask_labels = da.from_array(labels.values, chunks=(X.chunksize[0],))
+        dask_labels = da.from_array(
+            labels.to_numpy(dtype=object), chunks=(X.chunksize[0],)
+        )
         dask_labels = dask_labels.reshape((-1, 1, 1, 1))
 
         # Preprocess image patches

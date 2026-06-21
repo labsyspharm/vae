@@ -1224,7 +1224,9 @@ def ENCODE_IMAGES(config):
 
         # X_transform = X.astype('float')  # use for binary patches
 
-        sample_labels = da.from_array(y['Sample'].values, chunks=(chunk0))
+        sample_labels = da.from_array(
+            y['Sample'].to_numpy(dtype=object), chunks=(chunk0)
+        )
         sample_labels = sample_labels.reshape((-1, 1, 1, 1))
 
         print('Log transforming image patches and removing background')
@@ -1532,7 +1534,9 @@ def ENCODE_IMAGES(config):
             X_encoded = X_encoded[idxs].copy()
             X_encoded_embedded = X_encoded_embedded[idxs].copy()
 
-            sample_labels = da.from_array(y['Sample'].values, chunks=(chunk0))
+            sample_labels = da.from_array(
+                y['Sample'].to_numpy(dtype=object), chunks=(chunk0)
+            )
             sample_labels = sample_labels.reshape((-1, 1, 1, 1))
         
         #######################################################################
