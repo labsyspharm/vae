@@ -88,7 +88,8 @@ def remove_background(X_block, samples_block, bkgd_limits):
     elif str(X_block.dtype) == 'uint16':
         divisor = 65535
     else:
-        raise ValueError(f'Unsupported data type: {X_block.dtype}')
+        divisor = 255
+        # raise ValueError(f'Unsupported data type: {X_block.dtype}')
     num_samples, _, _, num_channels = X_block.shape    
     
     # convert patch data to float32
@@ -188,7 +189,8 @@ def reverse_processing(X_decoded_block, X_block, samples_block, bkgd_limits, con
     elif str(X_block.dtype) == 'uint16':
         divisor = 65535
     else:
-        raise ValueError(f'Unsupported data type: {X_block.dtype}')
+        divisor = 255
+        # raise ValueError(f'Unsupported data type: {X_block.dtype}')
     num_samples, _, _, num_channels = X_block.shape
 
     # get log-transformed channel mins

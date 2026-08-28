@@ -101,18 +101,12 @@ def input_output(config):
     # Read Leiden clusters if they have been computed previously
     leiden_path = os.path.join(
         config.output_path,
-        f'7_latent_space_LD{config.latent_dimension}/'
+        f'7_latent_space_LD{config.latent_dimension}/leiden_out/'
         'encodings_FULL-patches.csv')
     try:
         clusters = pd.read_csv(leiden_path)
     except FileNotFoundError:
-        # Use HDBSCAN clusters to compute concept saliency
-        clusters = np.load(
-            os.path.join(
-                config.output_path, 
-                f'7_latent_space_LD{config.latent_dimension}/hdbscan_labels.npy')
-        )
-        clusters = pd.DataFrame(data={'Cluster': clusters})
+        sys.exit(f"Leiden cluster file not found: {leiden_path}")
     print()
 
     # Read encodings
@@ -747,7 +741,8 @@ def SALIENCY_MAP(config):
                         
                         ax1.imshow(overlay)
                         ax1.set_title(
-                            f'{antibody_abbrs[channel_name]}',
+                            antibody_abbrs[channel_name] if 
+                            channel_name in antibody_abbrs else channel_name,
                             fontsize=7, fontweight='bold', y=0.94
                         )
                         ax1.axis('off')
@@ -828,7 +823,7 @@ def SALIENCY_MAP(config):
                     for name, color in config.channel_colors.items():
                         legend_elements.append(
                             Line2D([0], [0], color=color, lw=5, 
-                                   label=antibody_abbrs[name])
+                                   label=antibody_abbrs[name] if name in antibody_abbrs else name)
                         )
                     fig.legend(
                         handles=legend_elements, prop={'size': 8},

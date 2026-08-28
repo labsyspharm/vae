@@ -106,7 +106,7 @@ def PlotInputImgs(config, numExamples, numColumns, imgs, seg, intensity_multipli
 
         label = data['Sample']  # cluster_column
 
-        # plt.imshow(seg_rgb, alpha=0.4)
+        plt.imshow(seg_rgb, alpha=0.4)
         plt.imshow(centroid_layer)
         plt.xlabel(label, size=fontSize, labelpad=1.5)
 
@@ -155,7 +155,7 @@ def GENERATE_IMAGE_GALLERY(config):
             f'test_patches_{config.window_size}_qc.zip'
         )
         z = zarr.open(zarr.ZipStore(zip_store_path), mode='r')
-        
+
         # Read test segmentation patches
         zip_store_path_seg = os.path.join(
             cellcutter_output_path, 

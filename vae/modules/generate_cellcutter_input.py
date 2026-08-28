@@ -35,22 +35,19 @@ def GENERATE_CELLCUTTER_INPUT(config):
 
         #######################################################################
         # weighted random sampling
-        
-        cluster_col = (
-            "cluster_2d" if "cluster_2d" in csv.columns else
-            "cluster_3d" if "cluster_3d" in csv.columns else
-            None
-        )
 
+        print(f'Cluster column set to {config.cluster_column}')
+       
         n_samples = int(len(csv) * config.percent_cells)
 
-        if cluster_col is not None:
+        if config.cluster_column is not None:
 
-            csv = csv[csv[cluster_col] != -1].copy()
+            csv = csv[csv[config.cluster_column] != -1].copy()
+            n_samples = int(len(csv) * config.percent_cells)
 
-            cluster_sizes = csv[cluster_col].value_counts()
+            cluster_sizes = csv[config.cluster_column].value_counts()
 
-            weights = csv[cluster_col].map(
+            weights = csv[config.cluster_column].map(
                 lambda c: 1.0 / cluster_sizes[c]
             ).to_numpy()
 
@@ -66,7 +63,10 @@ def GENERATE_CELLCUTTER_INPUT(config):
             csv = csv.loc[chosen_idx]
 
             print("Cells per cluster after cluster-weighted sampling:")
-            print(csv.groupby(cluster_col).size().sort_values(ascending=False))
+            print(
+                csv.groupby(
+                    config.cluster_column).size().sort_values(ascending=False)
+            )
 
         else:
             chosen_idx = np.random.choice(

@@ -1,7 +1,9 @@
 import os
 import sys
 import yaml
+import pathlib
 import logging
+import subprocess
 
 import numpy as np
 import pandas as pd
@@ -233,13 +235,16 @@ def DecodeVectors(config, decoder, X_encoded, X, X_seg, sample_labels, bkgd_limi
                            patch_dims[1], patch_dims[2])
     )
 
-    X_decoded_reversed = da.map_blocks(
-        reverse_processing, X_decoded, X, sample_labels,
-        bkgd_limits, contrast_limits, mask,
-        dtype=np.float32  
-        # dtype parameter required to avoid 
-        # ValueError: dtype inference failed in map_blocks
-    )  # Call .compute() to debug
+    if config.RGB:
+        X_decoded_reversed = X_decoded
+    else:
+        X_decoded_reversed = da.map_blocks(
+            reverse_processing, X_decoded, X, sample_labels,
+            bkgd_limits, contrast_limits, mask,
+            dtype=np.float32  
+            # dtype parameter required to avoid 
+            # ValueError: dtype inference failed in map_blocks
+        )  # Call .compute() to debug
 
     # Slice out channels to visualize
     channel_indices = np.array(
@@ -662,7 +667,7 @@ def PlotReconstructedImages(config, patch_dims, X, mask, y, X_seg, X_decoded_rev
                     [tif_channels.index(i) for i in channel_color_dict.keys()]
                 )
                 input_img = input_img[:, :, channel_indices]
-                
+
                 # for RGB images
                 if config.RGB:
                     overlay = input_img
@@ -1180,44 +1185,6 @@ def ENCODE_IMAGES(config):
         # Combine labels for training, validation, and test data
         y = pd.concat([y_train, y_validate, y_test], axis=0)
         y['Sample'] = y['Sample'].astype(str)
-
-        if not config.cluster_full_dataset:
-            
-            idxs = rng.choice(
-                X.shape[0], size=config.clustering_sample_size, replace=False
-            )
-            
-            # Slicing can change the original chunk size, ensure equivalent 
-            # chunk sizes between
-            # filtered X and sample_labels in da.map_blocks by 
-            # explicitly rechunking axis0 (number of cells)
-            chunk0 = X.chunksize[0]
-            X = X[idxs].rechunk({0: chunk0})
-            X_seg = X_seg[idxs].rechunk({0: chunk0})
-            
-            y = y.iloc[idxs].copy()
-            y.reset_index(drop=True, inplace=True)
-
-        ########
-        # LEIDEN PATCHES
-        # patches = pd.read_csv(
-        #     '/Volumes/T7 Shield/emili/VAE10/'
-        #     '7_latent_space_LD1000/for_leiden_FULL-patches.csv' 
-        # )
-        # patches = pd.read_csv(
-        #     '/Volumes/T7 Shield/gibbs/VAE14_VIG21/'
-        #     '7_latent_space_LD2822/leiden-patches.csv'
-        # )
-
-        # filt = y[y['CellID'].isin(patches['CellID'])]
-        # filt['CellID'] = pd.Categorical(
-        #     filt['CellID'], categories=patches['CellID'], ordered=True
-        # )
-        # filt_sorted = filt.sort_values('CellID')
-        # X = X[filt_sorted.index].rechunk({0: chunk0})
-        # y = filt_sorted.reset_index(drop=True)
-        
-        ########
         
         #######################################################################
         # Preprocess image patch data
@@ -1252,11 +1219,12 @@ def ENCODE_IMAGES(config):
         # this code reverses the remove_background and masking operations
         def undo_transform(X_transform, sample_labels, bkgd_limits, original_dtype, mask=None):
             """
-            Undo both remove_background() and Gaussian vignette mask application.
+            Undo both remove_background() and Gaussian vignette mask.
 
             Args:
                 X_transform (ndarray):
-                    The transformed data AFTER remove_background() and mask multiplication.
+                    The transformed data AFTER remove_background()
+                    and mask multiplication.
                     Shape: (num_samples, H, W, C), dtype float32.
                 sample_labels (ndarray):
                     Sample labels used in remove_background.
@@ -1276,7 +1244,7 @@ def ENCODE_IMAGES(config):
             # STEP 1 — Undo vignette masking
             # ------------------------------
             if mask is not None:
-                # Avoid division by zero: mask pixels that are 0 should remain 0
+                # Avoid division by zero: mask pixels == 0 should remain 0
                 safe_mask = np.where(mask == 0, 1, mask)
                 X_norm = X_transform / safe_mask
                 X_norm = np.where(mask == 0, 0, X_norm)
@@ -1302,11 +1270,15 @@ def ENCODE_IMAGES(config):
                 for i in sample_labels.ravel() if i == key[0]
             ]).reshape(num_samples, num_channels)
 
-            channel_maxs = np.full((num_samples, num_channels), divisor, dtype="float32")
+            channel_maxs = np.full(
+                (num_samples, num_channels), divisor, dtype="float32"
+            )
 
             # log-space limits
-            log_channel_mins = np.log10(channel_mins + 1).reshape(num_samples, 1, 1, num_channels)
-            log_channel_maxs = np.log10(channel_maxs + 1).reshape(num_samples, 1, 1, num_channels)
+            log_channel_mins = np.log10(
+                    channel_mins + 1).reshape(num_samples, 1, 1, num_channels)
+            log_channel_maxs = np.log10(
+                    channel_maxs + 1).reshape(num_samples, 1, 1, num_channels)
             range_vals = log_channel_maxs - log_channel_mins
 
             # invert normalization
@@ -1322,23 +1294,21 @@ def ENCODE_IMAGES(config):
             X_recon = X_recon.astype(original_dtype)
 
             return X_recon
+        
         # X_transform_rev = undo_transform(
         #     X_transform, sample_labels, bkgd_limits, np.uint16, mask=mask
         # )
 
         #######################################################################
         # Encode images
-        
-        if config.cluster_full_dataset:
-            num_cells = 'FULL'
-        else:
-            num_cells = X_transform.shape[0]
+
+        num_cells = 'FULL'
         
         try:
             X_encoded = np.load(
                 os.path.join(save_dir, f'encodings_{num_cells}.npy')
             )
-
+    
         except (FileNotFoundError):
             print('Encoding images...')
 
@@ -1355,16 +1325,12 @@ def ENCODE_IMAGES(config):
                 [y['CellID'].reset_index(drop=True), pd.DataFrame(temp)], 
                 axis=1
             )
+            print('Saving image patch encodings...')
+            print()
             x_encoded_df.to_parquet(
                 os.path.join(
                     save_dir, 
                     f'encodings_{num_cells}.parquet'), 
-                index=False
-            )
-            x_encoded_df.to_csv(
-                os.path.join(
-                    save_dir, 
-                    f'for_leiden_{num_cells}.csv'), 
                 index=False
             )
 
@@ -1374,7 +1340,7 @@ def ENCODE_IMAGES(config):
         if (config.latent_dimension > 2):
             embedding_path = os.path.join(save_dir, 
                                           f'embedding_{num_cells}.npy')
-            
+
             try:
                 # Load previously saved embedding
                 X_encoded_embedded = np.load(embedding_path)
@@ -1382,8 +1348,6 @@ def ENCODE_IMAGES(config):
             except (FileNotFoundError):
 
                 startTime = datetime.now()
-
-                print('Embedding data...')
 
                 if config.embedding_algorithm == 'TSNE':
                     print('Computing TSNE embedding.')
@@ -1453,54 +1417,67 @@ def ENCODE_IMAGES(config):
             X_encoded_embedded = X_encoded.copy()
 
         #######################################################################
-        # Cluster VAE encodings in embedding space with HDBSCAN
+        # Cluster VAE encodings with scanpy leiden community detection
+
+        scanpy_script = pathlib.Path(__file__).parent.parent / "leiden.py"
+
+        leiden_out_dir = pathlib.Path(save_dir) / "leiden_out"
+        leiden_out_dir.mkdir(parents=True, exist_ok=True)
+
+        patches_path = leiden_out_dir / "encodings_FULL-patches.csv"
+
+        try:
+            patches = pd.read_csv(patches_path)
+
+        except FileNotFoundError:
+            print("Running Leiden Community Detection on VAE encodings...")
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(scanpy_script),
+                    "-i", os.path.join(
+                        save_dir, f"encodings_{num_cells}.parquet"
+                    ),
+                    "-o", str(leiden_out_dir),
+                    "-k", str(config.leiden_k),
+                    "-r", str(config.leiden_r),
+                ],
+                check=True,
+            )
+
+            # reload the Leiden patches generated by the script
+            if not os.path.exists(leiden_out_dir):
+                raise FileNotFoundError(
+                    f'Leiden script completed, but '
+                    'expected output was not found: '
+                    f'{leiden_out_dir}'
+                )
+
+            patches = pd.read_csv(patches_path)
         
-        print(f'Minimum_cluster_size is {config.hdbscan_min_cluster_size}')
-
-        clustering = hdbscan.HDBSCAN(
-            min_cluster_size=config.hdbscan_min_cluster_size, min_samples=None,
-            metric='euclidean', alpha=1.0, p=None, algorithm='best',
-            leaf_size=40,
-            memory=Memory(location=None),
-            approx_min_span_tree=True,
-            gen_min_span_tree=False, core_dist_n_jobs=4,
-            cluster_selection_method='eom',
-            allow_single_cluster=False,
-            prediction_data=False,
-            match_reference_implementation=False).fit(X_encoded_embedded)
-        print(np.unique(clustering.labels_))
-        np.save(
-            os.path.join(save_dir, 'hdbscan_labels.npy'), clustering.labels_
-        )
-        print()
-
         #######################################################################
+        # save main.csv for Jupyter notebook analysis
+        main_path = os.path.join(save_dir, 'main.csv')
+        if not os.path.exists(main_path):
+            print('Saving main.csv...')
+            print()
+            y['vae_emb1'] = X_encoded_embedded[:, 0]
+            y['vae_emb2'] = X_encoded_embedded[:, 1]
+            y[f'leiden_k{config.leiden_k}_r{config.leiden_r}'] = (
+                patches['Cluster'].values
+            )
+            y.to_csv(main_path, index=False)
+        #######################################################################
+
         # Plot VAE encodings in embedding space colored by various labels
 
         labels_list = {
             'cylinter': y[config.cluster_column],
-            'hdbscan': pd.Series(clustering.labels_), 
+            'leiden': pd.Series(patches.Cluster),
             'sample': y['Sample'],
             'condition': y['Condition']
         }
-        
-        #########
-        # LEIDEN
-        # labels_list['leiden'] = patches['Cluster']
-        #########
-        
-        try:
-            leiden_clusters = pd.read_csv(
-                os.path.join(save_dir, f'encodings_{num_cells}-patches.csv')
-            )
-
-            if not config.cluster_full_dataset:
-                leiden_clusters = leiden_clusters.iloc[idxs]
-            
-            labels_list['leiden'] = leiden_clusters['Cluster']
-        
-        except FileNotFoundError:
-            pass
 
         for name, labels in labels_list.items():
             print(f'Plotting {name} clustering...')
@@ -1516,7 +1493,8 @@ def ENCODE_IMAGES(config):
                 save_dir=save_dir
             )
         
-        # take a 100-patch subsample of data for decoding
+        #######################################################################
+        # use a 1000-patch subsample of data for decoding
         if X.shape[0] > 1000:
             idxs = rng.choice(
                 X.shape[0], size=1000, replace=False

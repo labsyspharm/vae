@@ -216,11 +216,14 @@ def REMOVE_BACKGROUND(config):
                                 pass
                             
                             elif type == 'processed':
+
                                 if str(imgs.dtype) == 'uint8':
                                     divisor = 255
                                 elif str(imgs.dtype) == 'uint16':
                                     divisor = 65535
-
+                                else:
+                                    divisor = 255
+                                
                                 min_val = bkgd_limits[(sample, marker)]
                                 log_min = np.log10(min_val + 1)
                                 log_max = np.log10(divisor + 1)

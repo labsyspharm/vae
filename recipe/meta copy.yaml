@@ -14,7 +14,7 @@ build:
   script:
     - "{{ PYTHON }} -m pip install . --no-deps --ignore-installed -vv "
     - "{{ PYTHON }} -m pip install git+https://github.com/catalystneuro/lazy_ops.git@main -vv "
-    # - "{{ PYTHON }} -m pip install git+https://github.com/labsyspharm/cellcutter.git@main -vv "
+    - "{{ PYTHON }} -m pip install git+https://github.com/labsyspharm/cellcutter.git@main -vv "
   entry_points:
     - vae=vae.scripts.__main__:main
   noarch: python
@@ -26,25 +26,25 @@ requirements:
     - setuptools
     - wheel
   host:
+    - python
     - pip
-    - python >=3.11,<3.14
-    - poetry-core >=1.0.0
+    - "poetry-core>=1.4,<1.7"  # import os bug in recent version of poetry-core
   run:
-    - python >=3.11,<3.14
+    - python<3.14
     - hdbscan
-    - umap-learn  # <0.5.4
+    - umap-learn<0.5.4
     - keras
     - natsort
     - pandas
     - pyarrow
     - pyyaml
     - seaborn
-    - tifffile =2024.12.12  # tifffile
-    - scikit-learn <1.3
+    - tifffile==2024.12.12  # tifffile
+    - scikit-learn<1.3
     - scikit-image
-    - tensorflow =2.15.0  # avoiding "from tensorflow.keras import XX" errors with tf >= 2.16 and making compatible with available o2 GPU CUDA modules.
+    - tensorflow=2.15.0  # avoiding "from tensorflow.keras import XX" errors with tf >= 2.16 and making compatible with available o2 GPU CUDA modules.
     - tensorflow-probability=0.23.0  # compatible with TF 2.15.0
-    - zarr <3
+    - zarr<3.0.0
     - opencv
     - napari
     - dask

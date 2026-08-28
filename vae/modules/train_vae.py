@@ -109,7 +109,7 @@ class DataGenerator(Sequence):
         # X = X.astype('float')  # Use for binary patches
         
         X = da.from_array(X)
-  
+
         labels = self.y[batch_indices]
         dask_labels = da.from_array(
             labels.to_numpy(dtype=object), chunks=(X.chunksize[0],)
@@ -134,7 +134,7 @@ class DataGenerator(Sequence):
         if np.isnan(X).any():
             print('Batch contains NaNs!!!')
             sys.exit(1)
-        
+
         return X
 
 
@@ -168,7 +168,7 @@ def build_and_fit_model(img_shape, latent_dimension, learning_rate, training_epo
     # ENCODER NETWORK: Input -> Conv2D*4 -> Flatten -> Dense
     input_img = keras.Input(shape=img_shape)
 
-    RMSprop(learning_rate=learning_rate)
+    optimizer = RMSprop(learning_rate=learning_rate)
 
     x = layers.Conv2D(
         filters=32, kernel_size=3, padding='same', activation='relu'
@@ -268,7 +268,12 @@ def build_and_fit_model(img_shape, latent_dimension, learning_rate, training_epo
 
     # VAE model statement
     vae = Model(input_img, y)
-    vae.compile(optimizer='RMSprop', loss=None)
+    
+    # vae.compile(optimizer='RMSprop', loss=None)
+    vae.compile(optimizer=optimizer, loss=None)
+    print(vae.optimizer)
+    print(vae.optimizer.get_config())
+    
     vae.summary()
 
     # Initialize tensorboard

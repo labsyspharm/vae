@@ -50,6 +50,9 @@ ome-types = "*"
 torch = "*"
 pytorch-lightning = "*"
 segmentation-models-pytorch = "*"
+scanpy = "*"
+igraph = "*"
+leidenalg = "*"
 
 [tool.poetry.scripts]
 vae = "vae.scripts.__main__:main"
