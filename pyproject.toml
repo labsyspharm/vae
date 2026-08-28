@@ -23,7 +23,7 @@ authors = ["Gregory J. Baker <gregory_baker2@hms.harvard.edu>"]
 homepage = "https://github.com/labsyspharm/vae"
 
 [tool.poetry.dependencies]
-python = ">=3.11,<3.14"
+python = ">=3.11,<3.12"
 cellcutter = { git = "https://github.com/labsyspharm/cellcutter.git", branch = "main" }
 lazyslice = { git = "https://github.com/catalystneuro/lazy_ops.git", branch = "main" }
 hdbscan = "*"

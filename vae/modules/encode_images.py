@@ -37,7 +37,6 @@ import dask.array as da
 
 from keras.models import load_model
 
-import hdbscan
 from umap import UMAP
 from sklearn.manifold import TSNE
 
