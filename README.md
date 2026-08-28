@@ -10,19 +10,20 @@ MORPHӔUS is Python-based software for morphology-aware classification of single
 ## Installation
 
 Install MORPHӔUS into a dedicated Conda environment and activate it with the following commands:
+
+If conda is not already installed, you can download it by following the instructions provided [here](https://docs.anaconda.com/miniconda/).
+
 ```bash
 
 # macOS
-conda create -n morphaeus -c conda-forge -c labsyspharm python=3.11 vae
+conda create -n morphaeus -c conda-forge -c labsyspharm python=3.11 vae=0.0.8
 conda activate morphaeus
 
 # PC
 conda create -n morphaeus python=3.11
 conda activate morphaeus
-pip install git+https://github.com/labsyspharm/vae.git@v0.0.7
+pip install git+https://github.com/labsyspharm/vae.git@v0.0.8
 ```
-
-If conda is not already installed, you can download it by following the instructions provided [here](https://docs.anaconda.com/miniconda/).
 
 ---
 
@@ -46,7 +47,7 @@ Available modules:
 - `ENCODE_IMAGES`
 - `SALIENCY_MAP`
 
-Note: In order to re-run a module, the corresponding checkpoint file must be removed from the `checkpoints` folder in the output directory.
+Note: To re-run a module, first remove the corresponding checkpoint file from the `checkpoints` folder in the output directory.
 
 ---
 

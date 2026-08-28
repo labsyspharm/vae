@@ -13,6 +13,7 @@ __pycache__/
 *.so
 
 .DS_Store
+poetry.lock
 
 # Jekyll
 _site/

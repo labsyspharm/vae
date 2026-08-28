@@ -5,51 +5,72 @@ build-backend = "poetry.core.masonry.api"
 [tool.poetry]
 name = "vae"
 version = "0.0.8"
-description = "Generate cropped image patches from a multi-channel TIF image, train a VAE model, and perform clustering on latent space image patch encodings."
+description = "MORPHAEUS (VAE) is a pipeline for generating cropped image patches from multi-channel TIF images, training a variational autoencoder, encoding image patches into a latent space, and performing Leiden community detection."
 readme = "README.md"
 license = "MIT"
-keywords =['spatial proteomics, variational autoencoder (VAE), artificial intelligence, tissue phenotyping']
-classifiers=[
-    'Development Status :: 4 - Beta',
-    'Intended Audience :: End Users/Desktop',
-    'Intended Audience :: Science/Research',
-    'License :: OSI Approved :: MIT License',
-    'Natural Language :: English',
-    'Operating System :: OS Independent',
-    'Programming Language :: Python :: 3',
-    'Topic :: Scientific/Engineering :: Visualization'
+keywords = [
+    "spatial proteomics",
+    "variational autoencoder (VAE)",
+    "artificial intelligence",
+    "tissue phenotyping"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Visualization"
 ]
 authors = ["Gregory J. Baker <gregory_baker2@hms.harvard.edu>"]
 homepage = "https://github.com/labsyspharm/vae"
 
 [tool.poetry.dependencies]
 python = ">=3.11,<3.12"
-cellcutter = { git = "https://github.com/labsyspharm/cellcutter.git", branch = "main" }
-lazyslice = { git = "https://github.com/catalystneuro/lazy_ops.git", branch = "main" }
-hdbscan = "*"
+
+# Zarr2 stack
+zarr = "<=2.14.0"
+numcodecs = "<0.13"
+cellcutter = "0.2.7"
+
+# UMAP/scikit-learn compatibility
+setuptools = "<81"
 umap-learn = "<0.5.4"
-keras = "*"
+scikit-learn = "<1.3"
+
+# image processing
+tifffile = "2024.12.12"
+scikit-image = "*"
+opencv-python = "*"
+
+# data handling
 natsort = "*"
 pandas = "*"
 pyarrow = "*"
 pyyaml = "*"
-seaborn = "*"
-tifffile = "2024.12.12"
-scikit-learn = "<1.3"
-scikit-image = "*"
-tensorflow = { version = "2.15.0", markers = "sys_platform != 'darwin' or platform_machine != 'arm64'" }
-tensorflow-macos = { version = "2.15.0", markers = "sys_platform == 'darwin' and platform_machine == 'arm64'" }
-# tensorflow-macos = "2.15.0" # avoiding "from tensorflow.keras import XX" errors with tf >= 2.16 and making compatible with available o2 GPU CUDA modules.
-tensorflow-probability = "0.23.0" # compatible with TF 2.15.0
-zarr = "<=2.14.0"  # requirement of cellcutter
-numcodecs = "<0.13"
-opencv-python = "*"
-napari = "*"
 dask = "*"
 ome-types = "*"
+
+# deep learning
+keras = "*"
+tensorflow = { version = "2.15.0", markers = "sys_platform != 'darwin' or platform_machine != 'arm64'" }
+# this is the critical dependency: the pipeline currently requires TensorFlow 2.15.
+# Newer versions (>=2.16) cause compatibility issues with imports such as
+# "from tensorflow.keras import ...", and 2.15 is compatible with the
+# available O2 GPU/CUDA modules.
+tensorflow-macos = { version = "2.15.0", markers = "sys_platform == 'darwin' and platform_machine == 'arm64'" }
+tensorflow-probability = "0.23.0"
 torch = "*"
 pytorch-lightning = "*"
 segmentation-models-pytorch = "*"
+
+# viz/analysis
+napari = "*"
+seaborn = "*"
+
+# Leiden community detection
 scanpy = "*"
 igraph = "*"
 leidenalg = "*"

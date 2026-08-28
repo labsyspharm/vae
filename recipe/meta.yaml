@@ -2,21 +2,19 @@
 {% set version = "0.0.8" %}
 
 package:
-  name: "{{ name|lower }}"
-  version: "{{ version }}"
+  name: {{ name|lower }}
+  version: {{ version }}
 
 source:
   git_url: https://github.com/labsyspharm/vae.git
-  git_tag: v0.0.8
+  git_tag: v{{ version }}
   # git_rev: main
 
 build:
   number: 0
   noarch: python
   script:
-    - "{{ PYTHON }} -m pip install . --no-deps --ignore-installed -vv "
-    # - "{{ PYTHON }} -m pip install git+https://github.com/catalystneuro/lazy_ops.git@main -vv "
-    # - "{{ PYTHON }} -m pip install git+https://github.com/labsyspharm/cellcutter.git@main -vv "
+    - "{{ PYTHON }} -m pip install . --no-deps --ignore-installed -vv"
   entry_points:
     - vae=vae.scripts.__main__:main
 
@@ -25,40 +23,50 @@ requirements:
     - pip
     - python >=3.11,<3.12
     - poetry-core >=1.0.0
-  
-  # build:
-  #   - python
-  #   - pip
-  #   - setuptools
-  #   - wheel
 
   run:
     - python >=3.11,<3.12
-    # - cellcutter =0.2.7
-    - zarr >=3
-    - cellcutter >=0.2.13  # this version is compatible with Zarr3
-    - keras
+
+    # Zarr2 stack
+    - zarr <=2.14.0
+    - numcodecs <0.13
+    - cellcutter =0.2.7
+
+    # UMAP/scikit-learn compatibility
+    - setuptools <81
+    - umap-learn <0.5.4
+    - scikit-learn <1.3
+
+    # image processing
+    - tifffile =2024.12.12
+    - scikit-image
+    - opencv
+
+    # data handling
     - natsort
     - pandas
     - pyarrow
     - pyyaml
-    - scikit-image
-    - seaborn
-    - scikit-learn <1.3
-    - umap-learn <0.5.4
-    - tifffile =2024.12.12
-    - tensorflow =2.15.0  # avoiding "from tensorflow.keras import XX" errors with tf >= 2.16 and making compatible with available o2 GPU CUDA modules.
-    - tensorflow-probability =0.23.0  # compatible with TF 2.15.0
-    
-    # - zarr <=2.14.0  # requirement of cellcutter
-    # - numcodecs <0.13
-    - opencv
-    - napari
     - dask
     - ome-types
-    - pytorch # used for Pytorch segmentation models 
+
+    # deep learning
+    - keras
+    - tensorflow =2.15.0 
+    # this is the critical dependency: the pipeline currently requires TensorFlow 2.15.
+    # Newer versions (>=2.16) cause compatibility issues with imports such 
+    # as from tensorflow.keras import ...", and 2.15 is compatible with the
+    # available o2 GPU/CUDA modules.
+    - tensorflow-probability =0.23.0
+    - pytorch
     - pytorch-lightning
     - segmentation-models-pytorch
+
+    # viz/analysis
+    - napari
+    - seaborn
+
+    # Leiden community detection
     - scanpy
     - igraph
     - leidenalg
@@ -70,6 +78,8 @@ test:
 about:
   home: https://github.com/labsyspharm/vae
   license: MIT
-  license_family: BSD
-  summary: Generate cropped image patches from a multi-channel TIF image, train a VAE model, and perform clustering on latent space image patch encodings.
-  description-file: README.md
+  license_family: MIT
+  description:
+    MORPHAEUS (VAE) is a pipeline for generating cropped image patches from multi-channel
+    TIF images, training a variational autoencoder, encoding image patches
+    into a latent space, and performing Leiden community detection.
